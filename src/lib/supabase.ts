@@ -51,6 +51,10 @@ export interface Company {
   is_24h?: boolean;
   accepts_after_hours?: boolean;
   is_featured?: boolean;
+  plan_type?: 'free' | 'featured' | 'premium';
+  plan_status?: 'active' | 'inactive' | 'expired';
+  plan_started_at?: string;
+  plan_expires_at?: string;
 }
 
 export interface DeliveryDriver {

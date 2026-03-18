@@ -25,7 +25,7 @@ import { generatePixPayload } from '../lib/pix';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
 import { getShippingDetails, type ShippingResult } from '../lib/shipping';
-import { getSupplierStatus, STATUS_CONFIG } from '../lib/supplier';
+import { getSupplierStatus, STATUS_CONFIG, getCompanyPlan, PLAN_CONFIG } from '../lib/supplier';
 
 export default function Catalog() {
   const { profile } = useAuth();
@@ -334,9 +334,18 @@ export default function Catalog() {
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => {
-      const aFeatured = a.supplier?.is_featured ? 1 : 0;
-      const bFeatured = b.supplier?.is_featured ? 1 : 0;
-      return bFeatured - aFeatured;
+      const aPlan = getCompanyPlan(a.supplier as any);
+      const bPlan = getCompanyPlan(b.supplier as any);
+      
+      const planPriority = { premium: 3, featured: 2, free: 1 };
+      const aPriority = planPriority[aPlan] || 1;
+      const bPriority = planPriority[bPlan] || 1;
+      
+      if (bPriority !== aPriority) {
+        return bPriority - aPriority;
+      }
+      
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
   return (
@@ -427,15 +436,28 @@ export default function Catalog() {
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               "group bg-[#0A0A0A] border rounded-3xl p-4 transition-all relative",
-              product.supplier?.is_featured 
+              getCompanyPlan(product.supplier as any) === 'premium'
+                ? "border-orange-500/50 shadow-[0_0_25px_rgba(249,115,22,0.15)]"
+                : getCompanyPlan(product.supplier as any) === 'featured'
                 ? "border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.1)]" 
                 : "border-white/10 hover:border-orange-600/30"
             )}
           >
-            {product.supplier?.is_featured && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg z-10 flex items-center gap-1">
-                <Star size={10} fill="currentColor" />
-                Fornecedor Destaque
+            {getCompanyPlan(product.supplier as any) !== 'free' && (
+              <div className={cn(
+                "absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg z-10 flex items-center gap-1",
+                PLAN_CONFIG[getCompanyPlan(product.supplier as any)].bg
+              )}>
+                {getCompanyPlan(product.supplier as any) === 'premium' ? (
+                  <span className="text-white flex items-center gap-1">
+                    <span>🔥</span> Premium
+                  </span>
+                ) : (
+                  <span className="text-black flex items-center gap-1">
+                    <Star size={10} fill="currentColor" />
+                    Destaque
+                  </span>
+                )}
               </div>
             )}
             <div className="relative aspect-square bg-zinc-900 rounded-2xl mb-4 overflow-hidden">

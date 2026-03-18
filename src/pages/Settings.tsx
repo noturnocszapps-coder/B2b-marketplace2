@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Building2, Shield, Bell, Save, Camera } from 'lucide-react';
+import { getCompanyPlan, PLAN_CONFIG } from '../lib/supplier';
+import { User, Building2, Shield, Bell, Save, Camera, Star, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
@@ -384,7 +385,67 @@ export default function Settings() {
           )}
 
           {activeTab === 'company' && (
-            <form onSubmit={handleCompanyUpdate} className="bg-[#0A0A0A] border border-white/10 rounded-3xl p-8 space-y-6">
+            <div className="space-y-6">
+              {/* Plan Info Card */}
+              {profile?.role === 'supplier' && company && (
+                <div className={cn(
+                  "bg-[#0A0A0A] border rounded-3xl p-8 relative overflow-hidden",
+                  getCompanyPlan(company) === 'premium' ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.1)]" :
+                  getCompanyPlan(company) === 'featured' ? "border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.1)]" :
+                  "border-white/10"
+                )}>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center text-2xl",
+                          getCompanyPlan(company) === 'premium' ? "bg-orange-600/20 text-orange-500" :
+                          getCompanyPlan(company) === 'featured' ? "bg-yellow-500/20 text-yellow-500" :
+                          "bg-zinc-800 text-zinc-400"
+                        )}>
+                          {getCompanyPlan(company) === 'premium' ? <Zap size={24} fill="currentColor" /> :
+                           getCompanyPlan(company) === 'featured' ? <Star size={24} fill="currentColor" /> :
+                           <Shield size={24} />}
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold">Plano {PLAN_CONFIG[getCompanyPlan(company)].label}</h3>
+                          <p className="text-zinc-500 text-sm">Status: <span className="text-emerald-500 font-bold uppercase">{company.plan_status || 'Ativo'}</span></p>
+                        </div>
+                      </div>
+                      {getCompanyPlan(company) === 'free' && (
+                        <button 
+                          type="button"
+                          onClick={() => toast.info('Upgrade de planos em breve!')}
+                          className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20"
+                        >
+                          Fazer Upgrade
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Início do Plano</p>
+                        <p className="font-bold">{company.plan_started_at ? new Date(company.plan_started_at).toLocaleDateString('pt-BR') : 'N/A'}</p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Expiração</p>
+                        <p className="font-bold">{company.plan_expires_at ? new Date(company.plan_expires_at).toLocaleDateString('pt-BR') : 'Vitalício'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Background Accents */}
+                  <div className={cn(
+                    "absolute top-0 right-0 w-64 h-64 blur-[100px] opacity-10 -mr-32 -mt-32",
+                    getCompanyPlan(company) === 'premium' ? "bg-orange-500" :
+                    getCompanyPlan(company) === 'featured' ? "bg-yellow-500" :
+                    "bg-zinc-500"
+                  )} />
+                </div>
+              )}
+
+              <form onSubmit={handleCompanyUpdate} className="bg-[#0A0A0A] border border-white/10 rounded-3xl p-8 space-y-6">
               <div className="pb-6 border-b border-white/5">
                 <h3 className="text-xl font-bold mb-1">Dados da Empresa</h3>
                 <p className="text-zinc-500 text-sm">Gerencie as informações comerciais do seu perfil.</p>
@@ -609,6 +670,7 @@ export default function Settings() {
                 {company ? 'Atualizar Empresa' : 'Cadastrar Empresa'}
               </button>
             </form>
+          </div>
           )}
 
           {activeTab === 'notifications' && (

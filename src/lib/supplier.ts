@@ -50,3 +50,42 @@ export const STATUS_CONFIG = {
     border: 'border-zinc-600/20'
   }
 };
+
+export type PlanType = 'free' | 'featured' | 'premium';
+
+export function getCompanyPlan(company: Company): PlanType {
+  // If plan_status is 'expired' or 'inactive', treat as 'free'
+  if (company.plan_status === 'expired' || company.plan_status === 'inactive') {
+    return 'free';
+  }
+  
+  // Default to 'free' if not set
+  return company.plan_type || 'free';
+}
+
+export const PLAN_CONFIG = {
+  free: {
+    label: 'Gratuito',
+    icon: null,
+    badge: null,
+    color: 'text-zinc-400',
+    bg: 'bg-zinc-800',
+    text: 'text-zinc-400'
+  },
+  featured: {
+    label: 'Destaque',
+    icon: '⭐',
+    badge: 'Destaque',
+    color: 'text-yellow-500',
+    bg: 'bg-yellow-500',
+    text: 'text-black'
+  },
+  premium: {
+    label: 'Premium',
+    icon: '🔥',
+    badge: 'Premium',
+    color: 'text-orange-500',
+    bg: 'bg-orange-600',
+    text: 'text-white'
+  }
+};

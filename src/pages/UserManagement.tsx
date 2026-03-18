@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, type Profile } from '../lib/supabase';
+import { toast } from 'sonner';
+import { cn } from '../lib/utils';
 import { 
   Users, 
   Search, 
@@ -19,8 +21,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { cn } from '../lib/utils';
-import { toast } from 'sonner';
+import { getCompanyPlan, PLAN_CONFIG, type PlanType } from '../lib/supplier';
+import { AnimatePresence, motion } from 'motion/react';
 
 export default function UserManagement() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -28,6 +30,11 @@ export default function UserManagement() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'active' | 'blocked'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [selectedUserForPlan, setSelectedUserForPlan] = useState<any | null>(null);
+  const [planForm, setPlanForm] = useState({
+    type: 'free' as PlanType,
+    expires_at: ''
+  });
 
   useEffect(() => {
     fetchProfiles();
@@ -51,18 +58,32 @@ export default function UserManagement() {
     }
   }
 
-  const toggleFeatured = async (profileId: string, currentStatus: boolean) => {
+  const updatePlan = async () => {
+    if (!selectedUserForPlan) return;
+    setUpdatingId(selectedUserForPlan.id);
     try {
+      const company = selectedUserForPlan.companies?.[0];
+      if (!company) throw new Error('Empresa não encontrada');
+
       const { error } = await supabase
         .from('companies')
-        .update({ is_featured: !currentStatus })
-        .eq('profile_id', profileId);
+        .update({ 
+          plan_type: planForm.type,
+          plan_status: 'active',
+          plan_started_at: new Date().toISOString(),
+          plan_expires_at: planForm.expires_at || null,
+          is_featured: planForm.type !== 'free' // Keep is_featured in sync for now
+        })
+        .eq('id', company.id);
       
       if (error) throw error;
-      toast.success(`Fornecedor ${!currentStatus ? 'destacado' : 'removido dos destaques'} com sucesso!`);
+      toast.success(`Plano do fornecedor atualizado para ${PLAN_CONFIG[planForm.type].label}`);
+      setSelectedUserForPlan(null);
       fetchProfiles();
     } catch (error: any) {
-      toast.error('Erro ao atualizar destaque: ' + error.message);
+      toast.error('Erro ao atualizar plano: ' + error.message);
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -168,6 +189,15 @@ export default function UserManagement() {
                   <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-1 text-sm text-zinc-500">
                     <span className="flex items-center gap-1.5"><Mail size={14} className="text-zinc-600" /> {user.email}</span>
                     <span className="flex items-center gap-1.5"><Calendar size={14} className="text-zinc-600" /> {format(new Date(user.created_at), "dd/MM/yyyy")}</span>
+                    {user.role === 'supplier' && (
+                      <span className={cn(
+                        "flex items-center gap-1.5 font-bold",
+                        PLAN_CONFIG[getCompanyPlan((user as any).companies?.[0] || {})].color
+                      )}>
+                        <Shield size={14} /> 
+                        Plano: {PLAN_CONFIG[getCompanyPlan((user as any).companies?.[0] || {})].label}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -220,16 +250,23 @@ export default function UserManagement() {
 
                   {user.role === 'supplier' && user.status === 'active' && (
                     <button 
-                      onClick={() => toggleFeatured(user.id, (user as any).companies?.[0]?.is_featured || false)}
+                      onClick={() => {
+                        const company = (user as any).companies?.[0];
+                        setSelectedUserForPlan(user);
+                        setPlanForm({
+                          type: getCompanyPlan(company || {}),
+                          expires_at: company?.plan_expires_at?.split('T')[0] || ''
+                        });
+                      }}
                       className={cn(
                         "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
-                        (user as any).companies?.[0]?.is_featured 
-                          ? "bg-yellow-500 text-black" 
-                          : "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20"
+                        getCompanyPlan((user as any).companies?.[0] || {}) !== 'free'
+                          ? "bg-orange-600 text-white" 
+                          : "bg-white/5 text-zinc-400 hover:bg-white/10"
                       )}
                     >
-                      <Star size={16} fill={(user as any).companies?.[0]?.is_featured ? "currentColor" : "none"} />
-                      {(user as any).companies?.[0]?.is_featured ? 'Destaque' : 'Destacar'}
+                      <Shield size={16} />
+                      Gerenciar Plano
                     </button>
                   )}
 
@@ -256,6 +293,103 @@ export default function UserManagement() {
           ))
         )}
       </div>
+
+      {/* Plan Management Modal */}
+      <AnimatePresence>
+        {selectedUserForPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedUserForPlan(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-[#0A0A0A] border border-white/10 rounded-3xl p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold flex items-center gap-3">
+                  <Shield className="text-orange-500" />
+                  Gerenciar Plano
+                </h3>
+                <button onClick={() => setSelectedUserForPlan(null)} className="p-2 hover:bg-white/5 rounded-full">
+                  <XCircle size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm text-zinc-500 mb-4">
+                    Alterando plano para: <span className="text-white font-bold">{selectedUserForPlan.full_name}</span>
+                  </p>
+                  
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">
+                    Tipo de Plano
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {(['free', 'featured', 'premium'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setPlanForm(prev => ({ ...prev, type }))}
+                        className={cn(
+                          "flex items-center justify-between p-4 rounded-xl border transition-all text-left",
+                          planForm.type === type 
+                            ? "bg-orange-600/10 border-orange-600 text-white" 
+                            : "bg-white/5 border-white/5 text-zinc-500 hover:border-white/10"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">{PLAN_CONFIG[type].icon || '⚪'}</span>
+                          <div>
+                            <p className="font-bold">{PLAN_CONFIG[type].label}</p>
+                            <p className="text-[10px] opacity-60">
+                              {type === 'free' ? 'Visibilidade normal' : 
+                               type === 'featured' ? 'Destaque no topo' : 
+                               'Prioridade máxima e brilho extra'}
+                            </p>
+                          </div>
+                        </div>
+                        {planForm.type === type && <CheckCircle2 size={20} className="text-orange-500" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">
+                    Data de Expiração (Opcional)
+                  </label>
+                  <input 
+                    type="date"
+                    value={planForm.expires_at}
+                    onChange={(e) => setPlanForm(prev => ({ ...prev, expires_at: e.target.value }))}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all text-white"
+                  />
+                  <p className="text-[10px] text-zinc-500 mt-2">
+                    Deixe em branco para plano vitalício ou sem expiração automática.
+                  </p>
+                </div>
+
+                <button
+                  disabled={updatingId === selectedUserForPlan.id}
+                  onClick={updatePlan}
+                  className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {updatingId === selectedUserForPlan.id ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    'Salvar Alterações'
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
