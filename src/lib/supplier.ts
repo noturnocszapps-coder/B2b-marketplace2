@@ -65,8 +65,9 @@ export function getCompanyPlan(company: Company): PlanType {
 
 export const PLAN_CONFIG = {
   free: {
-    label: 'Gratuito',
-    icon: null,
+    label: 'Free',
+    description: 'Visibilidade básica',
+    icon: '⚪',
     badge: null,
     color: 'text-zinc-400',
     bg: 'bg-zinc-800',
@@ -74,6 +75,7 @@ export const PLAN_CONFIG = {
   },
   featured: {
     label: 'Destaque',
+    description: 'Aparece no topo',
     icon: '⭐',
     badge: 'Destaque',
     color: 'text-yellow-500',
@@ -82,6 +84,7 @@ export const PLAN_CONFIG = {
   },
   premium: {
     label: 'Premium',
+    description: 'Máxima visibilidade',
     icon: '🔥',
     badge: 'Premium',
     color: 'text-orange-500',

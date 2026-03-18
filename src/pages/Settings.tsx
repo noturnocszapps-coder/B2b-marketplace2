@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getCompanyPlan, PLAN_CONFIG } from '../lib/supplier';
+import { getCompanyPlan, PLAN_CONFIG, PlanType } from '../lib/supplier';
 import { User, Building2, Shield, Bell, Save, Camera, Star, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -390,37 +390,54 @@ export default function Settings() {
               {profile?.role === 'supplier' && company && (
                 <div className={cn(
                   "bg-[#0A0A0A] border rounded-3xl p-8 relative overflow-hidden",
-                  getCompanyPlan(company) === 'premium' ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.1)]" :
-                  getCompanyPlan(company) === 'featured' ? "border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.1)]" :
+                  (company.plan_type === 'premium' && company.plan_status !== 'expired') ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.1)]" :
+                  (company.plan_type === 'featured' && company.plan_status !== 'expired') ? "border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.1)]" :
                   "border-white/10"
                 )}>
                   <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
                       <div className="flex items-center gap-4">
                         <div className={cn(
-                          "w-12 h-12 rounded-2xl flex items-center justify-center text-2xl",
-                          getCompanyPlan(company) === 'premium' ? "bg-orange-600/20 text-orange-500" :
-                          getCompanyPlan(company) === 'featured' ? "bg-yellow-500/20 text-yellow-500" :
+                          "w-14 h-14 rounded-2xl flex items-center justify-center text-3xl",
+                          company.plan_type === 'premium' ? "bg-orange-600/20 text-orange-500" :
+                          company.plan_type === 'featured' ? "bg-yellow-500/20 text-yellow-500" :
                           "bg-zinc-800 text-zinc-400"
                         )}>
-                          {getCompanyPlan(company) === 'premium' ? <Zap size={24} fill="currentColor" /> :
-                           getCompanyPlan(company) === 'featured' ? <Star size={24} fill="currentColor" /> :
-                           <Shield size={24} />}
+                          {PLAN_CONFIG[company.plan_type as PlanType || 'free'].icon}
                         </div>
                         <div>
-                          <h3 className="text-xl font-bold">Plano {PLAN_CONFIG[getCompanyPlan(company)].label}</h3>
-                          <p className="text-zinc-500 text-sm">Status: <span className="text-emerald-500 font-bold uppercase">{company.plan_status || 'Ativo'}</span></p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-2xl font-bold">Plano {PLAN_CONFIG[company.plan_type as PlanType || 'free'].label}</h3>
+                            <span className={cn(
+                              "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
+                              company.plan_status === 'expired' ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"
+                            )}>
+                              {company.plan_status === 'expired' ? 'Expirado' : 'Ativo'}
+                            </span>
+                          </div>
+                          <p className="text-zinc-500 text-sm">{PLAN_CONFIG[company.plan_type as PlanType || 'free'].description}</p>
                         </div>
                       </div>
-                      {getCompanyPlan(company) === 'free' && (
-                        <button 
-                          type="button"
-                          onClick={() => toast.info('Upgrade de planos em breve!')}
-                          className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20"
-                        >
-                          Fazer Upgrade
-                        </button>
-                      )}
+                      
+                      <button 
+                        type="button"
+                        onClick={() => toast.info('Gerenciamento de planos em breve!')}
+                        className={cn(
+                          "px-6 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2",
+                          (company.plan_type === 'free' || !company.plan_type) 
+                            ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/20" 
+                            : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                        )}
+                      >
+                        {(company.plan_type === 'free' || !company.plan_type) ? (
+                          <>
+                            <span>🔥</span>
+                            Quero mais pedidos
+                          </>
+                        ) : (
+                          'Gerenciar plano'
+                        )}
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -438,8 +455,8 @@ export default function Settings() {
                   {/* Background Accents */}
                   <div className={cn(
                     "absolute top-0 right-0 w-64 h-64 blur-[100px] opacity-10 -mr-32 -mt-32",
-                    getCompanyPlan(company) === 'premium' ? "bg-orange-500" :
-                    getCompanyPlan(company) === 'featured' ? "bg-yellow-500" :
+                    company.plan_type === 'premium' ? "bg-orange-500" :
+                    company.plan_type === 'featured' ? "bg-yellow-500" :
                     "bg-zinc-500"
                   )} />
                 </div>
