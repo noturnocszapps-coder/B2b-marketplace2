@@ -14,7 +14,8 @@ import {
   Clock,
   Filter,
   Building2,
-  Trash2
+  Trash2,
+  Star
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -35,7 +36,10 @@ export default function UserManagement() {
   async function fetchProfiles() {
     setLoading(true);
     try {
-      let query = supabase.from('profiles').select('*').order('created_at', { ascending: false });
+      let query = supabase
+        .from('profiles')
+        .select('*, companies(*)')
+        .order('created_at', { ascending: false });
       
       const { data, error } = await query;
       if (error) throw error;
@@ -46,6 +50,21 @@ export default function UserManagement() {
       setLoading(false);
     }
   }
+
+  const toggleFeatured = async (profileId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ is_featured: !currentStatus })
+        .eq('profile_id', profileId);
+      
+      if (error) throw error;
+      toast.success(`Fornecedor ${!currentStatus ? 'destacado' : 'removido dos destaques'} com sucesso!`);
+      fetchProfiles();
+    } catch (error: any) {
+      toast.error('Erro ao atualizar destaque: ' + error.message);
+    }
+  };
 
   const updateStatus = async (userId: string, newStatus: string) => {
     setUpdatingId(userId);
@@ -196,6 +215,21 @@ export default function UserManagement() {
                     >
                       {updatingId === user.id ? <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" /> : <UserMinus size={16} />}
                       Bloquear
+                    </button>
+                  )}
+
+                  {user.role === 'supplier' && user.status === 'active' && (
+                    <button 
+                      onClick={() => toggleFeatured(user.id, (user as any).companies?.[0]?.is_featured || false)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                        (user as any).companies?.[0]?.is_featured 
+                          ? "bg-yellow-500 text-black" 
+                          : "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20"
+                      )}
+                    >
+                      <Star size={16} fill={(user as any).companies?.[0]?.is_featured ? "currentColor" : "none"} />
+                      {(user as any).companies?.[0]?.is_featured ? 'Destaque' : 'Destacar'}
                     </button>
                   )}
 

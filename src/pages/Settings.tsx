@@ -29,6 +29,12 @@ export default function Settings() {
   const [pixKeyType, setPixKeyType] = useState<string>('');
   const [pixKey, setPixKey] = useState('');
   const [pixRecipientName, setPixRecipientName] = useState('');
+  const [freeShippingEnabled, setFreeShippingEnabled] = useState(false);
+  const [freeShippingMinValue, setFreeShippingMinValue] = useState(0);
+  const [freeShippingMaxDistance, setFreeShippingMaxDistance] = useState(0);
+  const [nightService, setNightService] = useState(false);
+  const [is24h, setIs24h] = useState(false);
+  const [acceptsAfterHours, setAcceptsAfterHours] = useState(false);
 
   React.useEffect(() => {
     if (profile && (profile.role === 'retailer' || profile.role === 'supplier')) {
@@ -55,6 +61,12 @@ export default function Settings() {
         setPixKeyType(data.pix_key_type || '');
         setPixKey(data.pix_key || '');
         setPixRecipientName(data.pix_recipient_name || '');
+        setFreeShippingEnabled(data.free_shipping_enabled || false);
+        setFreeShippingMinValue(data.free_shipping_min_value || 0);
+        setFreeShippingMaxDistance(data.free_shipping_max_distance || 0);
+        setNightService(data.night_service || false);
+        setIs24h(data.is_24h || false);
+        setAcceptsAfterHours(data.accepts_after_hours || false);
       }
     } catch (error: any) {
       console.error('Erro ao carregar empresa:', error.message);
@@ -75,7 +87,13 @@ export default function Settings() {
         responsible_name: responsibleName,
         pix_key_type: pixKeyType,
         pix_key: pixKey,
-        pix_recipient_name: pixRecipientName
+        pix_recipient_name: pixRecipientName,
+        free_shipping_enabled: freeShippingEnabled,
+        free_shipping_min_value: freeShippingMinValue,
+        free_shipping_max_distance: freeShippingMaxDistance,
+        night_service: nightService,
+        is_24h: is24h,
+        accepts_after_hours: acceptsAfterHours
       };
 
       if (company) {
@@ -463,7 +481,124 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </div>
+
+                {/* Shipping Configuration */}
+                {profile?.role === 'supplier' && (
+                  <>
+                    <div className="sm:col-span-2 pt-6 border-t border-white/5">
+                      <h4 className="text-lg font-bold mb-4">Disponibilidade e Horários</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <div>
+                            <h4 className="font-bold text-xs uppercase tracking-wider">Atende à noite</h4>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setNightService(!nightService)}
+                            className={cn(
+                              "w-10 h-5 rounded-full transition-all relative",
+                              nightService ? "bg-orange-600" : "bg-zinc-700"
+                            )}
+                          >
+                            <div className={cn(
+                              "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all",
+                              nightService ? "left-5.5" : "left-0.5"
+                            )} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <div>
+                            <h4 className="font-bold text-xs uppercase tracking-wider">Atendimento 24h</h4>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setIs24h(!is24h)}
+                            className={cn(
+                              "w-10 h-5 rounded-full transition-all relative",
+                              is24h ? "bg-orange-600" : "bg-zinc-700"
+                            )}
+                          >
+                            <div className={cn(
+                              "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all",
+                              is24h ? "left-5.5" : "left-0.5"
+                            )} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <div>
+                            <h4 className="font-bold text-xs uppercase tracking-wider">Fora do horário</h4>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setAcceptsAfterHours(!acceptsAfterHours)}
+                            className={cn(
+                              "w-10 h-5 rounded-full transition-all relative",
+                              acceptsAfterHours ? "bg-orange-600" : "bg-zinc-700"
+                            )}
+                          >
+                            <div className={cn(
+                              "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all",
+                              acceptsAfterHours ? "left-5.5" : "left-0.5"
+                            )} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2 pt-6 border-t border-white/5">
+                      <h4 className="text-lg font-bold mb-4">Configuração de Frete Grátis</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 sm:col-span-2">
+                        <div>
+                          <h4 className="font-bold text-sm">Ativar Frete Grátis</h4>
+                          <p className="text-xs text-zinc-500">Ofereça frete grátis para pedidos que atingirem o valor mínimo e distância máxima.</p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setFreeShippingEnabled(!freeShippingEnabled)}
+                          className={cn(
+                            "w-12 h-6 rounded-full transition-all relative",
+                            freeShippingEnabled ? "bg-orange-600" : "bg-zinc-700"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                            freeShippingEnabled ? "left-7" : "left-1"
+                          )} />
+                        </button>
+                      </div>
+                      
+                      {freeShippingEnabled && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Valor Mínimo do Pedido (R$)</label>
+                            <input 
+                              type="number" 
+                              value={freeShippingMinValue}
+                              onChange={(e) => setFreeShippingMinValue(Number(e.target.value))}
+                              placeholder="0.00"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Distância Máxima (km)</label>
+                            <input 
+                              type="number" 
+                              value={freeShippingMaxDistance}
+                              onChange={(e) => setFreeShippingMaxDistance(Number(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
               <button 
                 disabled={loading}

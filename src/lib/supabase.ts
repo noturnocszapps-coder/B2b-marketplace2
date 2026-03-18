@@ -44,6 +44,13 @@ export interface Company {
   pix_key_type?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
   pix_key?: string;
   pix_recipient_name?: string;
+  free_shipping_enabled?: boolean;
+  free_shipping_min_value?: number;
+  free_shipping_max_distance?: number;
+  night_service?: boolean;
+  is_24h?: boolean;
+  accepts_after_hours?: boolean;
+  is_featured?: boolean;
 }
 
 export interface DeliveryDriver {
@@ -79,6 +86,8 @@ export interface Order {
   status: string;
   pix_code: string;
   created_at: string;
+  delivery_fee?: number;
+  is_free_shipping?: boolean;
   retailer?: Company;
   items?: OrderItem[];
 }
@@ -90,4 +99,22 @@ export interface OrderItem {
   quantity: number;
   price_at_purchase: number;
   product?: Product;
+}
+
+export interface Delivery {
+  id: string;
+  order_id: string;
+  driver_id: string | null;
+  status: string;
+  delivery_fee: number;
+  distance_km?: number;
+  vehicle_type?: string;
+  is_free_shipping?: boolean;
+  driver_payout?: number;
+  platform_fee?: number;
+  pickup_address?: string;
+  delivery_address?: string;
+  accepted_at?: string;
+  created_at: string;
+  order?: Order;
 }

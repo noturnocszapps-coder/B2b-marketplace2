@@ -15,7 +15,8 @@ import {
   QrCode,
   ChevronRight,
   Info,
-  Trash2
+  Trash2,
+  Star
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,6 +24,8 @@ import { toast } from 'sonner';
 import { generatePixPayload } from '../lib/pix';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
+import { getShippingDetails, type ShippingResult } from '../lib/shipping';
+import { getSupplierStatus, STATUS_CONFIG } from '../lib/supplier';
 
 export default function Catalog() {
   const { profile } = useAuth();
@@ -38,6 +41,8 @@ export default function Catalog() {
   const [cart, setCart] = useState<{product: Product, quantity: number}[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [shippingDetails, setShippingDetails] = useState<ShippingResult | null>(null);
+  const [calculatingShipping, setCalculatingShipping] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -54,7 +59,7 @@ export default function Catalog() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('*, category:categories(name, parent_category), supplier:companies(name)')
+        .select('*, category:categories(name, parent_category), supplier:companies(*)')
         .eq('is_active', true)
         .gt('stock_quantity', 0);
 
@@ -68,6 +73,23 @@ export default function Catalog() {
   }
 
   const addToCart = (product: Product) => {
+    // Enforce single supplier
+    if (cart.length > 0 && cart[0].product.supplier_id !== product.supplier_id) {
+      toast.error('Você só pode adicionar produtos de um mesmo fornecedor por pedido.', {
+        description: 'Deseja limpar o carrinho para adicionar este produto?',
+        action: {
+          label: 'Limpar Carrinho',
+          onClick: () => {
+            setCart([{ product, quantity: 1 }]);
+            setAddedProductId(product.id);
+            setTimeout(() => setAddedProductId(null), 1000);
+            toast.success(`${product.name} adicionado ao carrinho`);
+          }
+        }
+      });
+      return;
+    }
+
     setAddedProductId(product.id);
     setTimeout(() => setAddedProductId(null), 1000);
 
@@ -111,6 +133,45 @@ export default function Catalog() {
   const cartTotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Calculate shipping whenever cart changes
+  useEffect(() => {
+    async function updateShipping() {
+      if (cart.length === 0 || !profile) {
+        setShippingDetails(null);
+        return;
+      }
+
+      setCalculatingShipping(true);
+      try {
+        const supplierId = cart[0].product.supplier_id;
+        
+        // Fetch supplier and retailer details for addresses
+        const [supplierRes, retailerRes] = await Promise.all([
+          supabase.from('companies').select('*').eq('id', supplierId).single(),
+          supabase.from('companies').select('*').eq('profile_id', profile.id).maybeSingle()
+        ]);
+
+        if (supplierRes.data && retailerRes.data) {
+          const totalWeight = cart.reduce((sum, item) => sum + ((item.product.weight || 1) * item.quantity), 0);
+          const details = getShippingDetails(
+            cartTotal,
+            totalWeight,
+            supplierRes.data.address || '',
+            retailerRes.data.address || '',
+            supplierRes.data
+          );
+          setShippingDetails(details);
+        }
+      } catch (error) {
+        console.error('Error calculating shipping:', error);
+      } finally {
+        setCalculatingShipping(false);
+      }
+    }
+
+    updateShipping();
+  }, [cart, cartTotal, profile]);
+
   const handleCheckout = async () => {
     if (cart.length === 0 || !profile) return;
     setIsCheckingOut(true);
@@ -131,13 +192,14 @@ export default function Catalog() {
       }
 
       let finalRetailerId = '';
+      let finalRetailer = null;
 
       if (profile.role === 'admin') {
         // For admin, we could show a selector, but for now let's just pick the first retailer 
         // or throw a more informative error.
         const { data: firstRetailer, error: fetchError } = await supabase
           .from('companies')
-          .select('id')
+          .select('*')
           .eq('type', 'retailer')
           .limit(1)
           .maybeSingle();
@@ -146,11 +208,12 @@ export default function Catalog() {
           throw new Error('Nenhum lojista cadastrado no sistema para realizar o pedido administrativo.');
         }
         finalRetailerId = firstRetailer.id;
+        finalRetailer = firstRetailer;
       } else {
         // Try to find the company
         const { data: company, error: fetchError } = await supabase
           .from('companies')
-          .select('id')
+          .select('*')
           .eq('profile_id', profile.id)
           .maybeSingle();
 
@@ -171,11 +234,13 @@ export default function Catalog() {
             
             if (createError) throw new Error('Não foi possível vincular uma empresa ao seu perfil. Por favor, contate o suporte.');
             finalRetailerId = newCompany.id;
+            finalRetailer = newCompany;
           } else {
             throw new Error('Empresa não encontrada para o seu perfil.');
           }
         } else {
           finalRetailerId = company.id;
+          finalRetailer = company;
         }
       }
 
@@ -184,7 +249,7 @@ export default function Catalog() {
         key: supplierCompany.pix_key,
         recipient: supplierCompany.pix_recipient_name || supplierCompany.name,
         city: supplierCompany.address?.split(',')[0] || 'SAO PAULO',
-        amount: cartTotal,
+        amount: shippingDetails ? shippingDetails.total : cartTotal,
         description: `Pedido B2B Market`
       });
 
@@ -192,7 +257,9 @@ export default function Catalog() {
         .from('orders')
         .insert({
           retailer_id: finalRetailerId,
-          total_amount: cartTotal,
+          total_amount: shippingDetails ? shippingDetails.total : cartTotal,
+          delivery_fee: shippingDetails?.deliveryFee || 0,
+          is_free_shipping: shippingDetails?.isFreeShipping || false,
           status: 'aguardando pagamento',
           pix_code: pixCode
         })
@@ -225,12 +292,20 @@ export default function Catalog() {
         if (stockError) throw stockError;
       }
 
-      // Create delivery record
+      // Create delivery record with shipping details
       await supabase
         .from('deliveries')
         .insert({
           order_id: order.id,
-          status: 'aguardando entregador'
+          status: 'aguardando entregador',
+          delivery_fee: shippingDetails?.deliveryFee || 0,
+          distance_km: shippingDetails?.distanceKm || 0,
+          vehicle_type: shippingDetails?.vehicleType || 'MOTO',
+          is_free_shipping: shippingDetails?.isFreeShipping || false,
+          driver_payout: shippingDetails?.driverPayout || 0,
+          platform_fee: shippingDetails?.platformFee || 0,
+          pickup_address: supplierCompany.address,
+          delivery_address: finalRetailer?.address
         });
 
       // Add supplier info to order object for the modal
@@ -251,12 +326,18 @@ export default function Catalog() {
     }
   };
 
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         p.category?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredProducts = products
+    .filter(p => {
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           p.category?.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      const aFeatured = a.supplier?.is_featured ? 1 : 0;
+      const bFeatured = b.supplier?.is_featured ? 1 : 0;
+      return bFeatured - aFeatured;
+    });
 
   return (
     <div className="space-y-8 pb-20">
@@ -344,8 +425,19 @@ export default function Catalog() {
             key={product.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="group bg-[#0A0A0A] border border-white/10 rounded-3xl p-4 hover:border-orange-600/30 transition-all"
+            className={cn(
+              "group bg-[#0A0A0A] border rounded-3xl p-4 transition-all relative",
+              product.supplier?.is_featured 
+                ? "border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.1)]" 
+                : "border-white/10 hover:border-orange-600/30"
+            )}
           >
+            {product.supplier?.is_featured && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg z-10 flex items-center gap-1">
+                <Star size={10} fill="currentColor" />
+                Fornecedor Destaque
+              </div>
+            )}
             <div className="relative aspect-square bg-zinc-900 rounded-2xl mb-4 overflow-hidden">
               {product.image_url ? (
                 <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -361,7 +453,20 @@ export default function Catalog() {
 
             <div className="space-y-1 mb-4">
               <h3 className="font-bold text-lg truncate">{product.name}</h3>
-              <p className="text-xs text-zinc-500 truncate">Fornecido por: {product.supplier?.name}</p>
+              <div className="flex flex-col gap-2 mb-1">
+                <p className="text-xs text-zinc-500 truncate">Fornecido por: {product.supplier?.name}</p>
+                {product.supplier && (
+                  <div className={cn(
+                    "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold w-fit",
+                    STATUS_CONFIG[getSupplierStatus(product.supplier)].bg,
+                    STATUS_CONFIG[getSupplierStatus(product.supplier)].text,
+                    STATUS_CONFIG[getSupplierStatus(product.supplier)].border
+                  )}>
+                    <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].icon}</span>
+                    <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].label}</span>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-xl font-black text-white">{formatCurrency(product.price)}</span>
                 <span className="text-[10px] text-zinc-500 font-bold uppercase">Estoque: {product.stock_quantity}</span>
@@ -471,16 +576,66 @@ export default function Catalog() {
 
               {cart.length > 0 && (
                 <div className="p-6 border-t border-white/10 bg-[#050505] space-y-4">
-                  <div className="flex items-center justify-between text-zinc-400">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(cartTotal)}</span>
+                  {/* Supplier Availability Status */}
+                  {cart[0].product.supplier && (
+                    <div className={cn(
+                      "flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold",
+                      STATUS_CONFIG[getSupplierStatus(cart[0].product.supplier)].bg,
+                      STATUS_CONFIG[getSupplierStatus(cart[0].product.supplier)].text,
+                      STATUS_CONFIG[getSupplierStatus(cart[0].product.supplier)].border
+                    )}>
+                      <span>{STATUS_CONFIG[getSupplierStatus(cart[0].product.supplier)].icon}</span>
+                      <span>{STATUS_CONFIG[getSupplierStatus(cart[0].product.supplier)].label}</span>
+                    </div>
+                  )}
+
+                  {cart[0].product.supplier?.accepts_after_hours && (
+                    <div className="p-3 bg-emerald-600/10 border border-emerald-600/20 rounded-xl flex items-start gap-3">
+                      <Info size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-[11px] text-emerald-500/90 leading-relaxed">
+                        Este fornecedor aceita pedidos fora do horário comercial. Seu pedido será processado na próxima janela de atendimento.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-zinc-400 text-sm">
+                      <span>Subtotal</span>
+                      <span>{formatCurrency(cartTotal)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-zinc-400 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span>Frete</span>
+                        {shippingDetails?.vehicleType && (
+                          <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded uppercase font-bold text-zinc-500">
+                            {shippingDetails.vehicleType}
+                          </span>
+                        )}
+                      </div>
+                      {calculatingShipping ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : shippingDetails?.isFreeShipping ? (
+                        <span className="text-emerald-500 font-bold">Grátis</span>
+                      ) : (
+                        <span>{formatCurrency(shippingDetails?.deliveryFee || 0)}</span>
+                      )}
+                    </div>
+                    {shippingDetails?.isFreeShipping && (
+                      <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">
+                        Frete grátis aplicado pela loja
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-xl font-bold">
+
+                  <div className="flex items-center justify-between text-xl font-bold pt-2 border-t border-white/5">
                     <span>Total</span>
-                    <span className="text-orange-500">{formatCurrency(cartTotal)}</span>
+                    <span className="text-orange-500">
+                      {formatCurrency(shippingDetails ? shippingDetails.total : cartTotal)}
+                    </span>
                   </div>
+                  
                   <button 
-                    disabled={isCheckingOut}
+                    disabled={isCheckingOut || calculatingShipping}
                     onClick={handleCheckout}
                     className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
