@@ -1,0 +1,7 @@
+{
+  "name": "B2B Marketplace Premium",
+  "description": "Plataforma B2B regional para tabacarias, adegas e conveniências. Conectando fornecedores, lojistas e entregadores.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
