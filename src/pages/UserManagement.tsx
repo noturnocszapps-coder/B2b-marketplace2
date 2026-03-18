@@ -37,10 +37,6 @@ export default function UserManagement() {
     try {
       let query = supabase.from('profiles').select('*').order('created_at', { ascending: false });
       
-      if (filter !== 'all') {
-        query = query.eq('status', filter);
-      }
-
       const { data, error } = await query;
       if (error) throw error;
       setProfiles(data || []);
@@ -52,9 +48,6 @@ export default function UserManagement() {
   }
 
   const updateStatus = async (userId: string, newStatus: string) => {
-    if (newStatus === 'active' && !confirm('Deseja aprovar este usuário para acessar a plataforma?')) return;
-    if (newStatus === 'blocked' && !confirm('Deseja bloquear o acesso deste usuário?')) return;
-    
     setUpdatingId(userId);
     try {
       const { error } = await supabase
@@ -72,10 +65,15 @@ export default function UserManagement() {
     }
   };
 
-  const filteredProfiles = profiles.filter(profile => 
-    profile.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    profile.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProfiles = profiles.filter(profile => {
+    const matchesSearch = 
+      profile.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      profile.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesFilter = filter === 'all' || profile.status === filter;
+    
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <div className="space-y-8">
@@ -170,24 +168,30 @@ export default function UserManagement() {
 
                 <div className="flex items-center gap-2">
                   {user.status === 'pending' && (
-                    <button 
-                      disabled={updatingId === user.id}
-                      onClick={() => updateStatus(user.id, 'active')}
-                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-                    >
-                      {updatingId === user.id ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UserCheck size={16} />}
-                      Aprovar
-                    </button>
+                    <>
+                      <button 
+                        disabled={updatingId === user.id}
+                        onClick={() => updateStatus(user.id, 'active')}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        {updatingId === user.id ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UserCheck size={16} />}
+                        Aprovar
+                      </button>
+                      <button 
+                        disabled={updatingId === user.id}
+                        onClick={() => updateStatus(user.id, 'blocked')}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        {updatingId === user.id ? <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" /> : <UserMinus size={16} />}
+                        Bloquear
+                      </button>
+                    </>
                   )}
 
                   {user.status === 'active' && (
                     <button 
                       disabled={updatingId === user.id}
-                      onClick={() => {
-                        if (confirm('Tem certeza que deseja bloquear este usuário?')) {
-                          updateStatus(user.id, 'blocked');
-                        }
-                      }}
+                      onClick={() => updateStatus(user.id, 'blocked')}
                       className="flex items-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                     >
                       {updatingId === user.id ? <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" /> : <UserMinus size={16} />}
@@ -202,7 +206,7 @@ export default function UserManagement() {
                       className="flex items-center gap-2 px-4 py-2 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                     >
                       {updatingId === user.id ? <div className="w-4 h-4 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /> : <UserCheck size={16} />}
-                      Desbloquear
+                      Reativar
                     </button>
                   )}
 

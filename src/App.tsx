@@ -47,7 +47,7 @@ export default function App() {
           } />
 
           <Route path="/catalog" element={
-            <ProtectedRoute allowedRoles={['retailer']}>
+            <ProtectedRoute allowedRoles={['admin', 'retailer']}>
               <DashboardLayout>
                 <Catalog />
               </DashboardLayout>

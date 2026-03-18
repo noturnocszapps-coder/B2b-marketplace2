@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { 
@@ -12,7 +13,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Truck,
-  DollarSign
+  DollarSign,
+  Settings
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -39,6 +41,7 @@ const mockChartData = [
 
 export default function Dashboard() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
@@ -139,10 +142,14 @@ export default function Dashboard() {
     }
   }
 
-  const StatCard = ({ title, value, icon: Icon, trend, color }: any) => (
+  const StatCard = ({ title, value, icon: Icon, trend, color, onClick }: any) => (
     <motion.div 
       whileHover={{ y: -5 }}
-      className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-6"
+      onClick={onClick}
+      className={cn(
+        "bg-[#0A0A0A] border border-white/10 rounded-2xl p-6",
+        onClick && "cursor-pointer hover:border-orange-600/50 transition-all"
+      )}
     >
       <div className="flex items-start justify-between mb-4">
         <div className={cn("p-3 rounded-xl", color)}>
@@ -169,40 +176,47 @@ export default function Dashboard() {
         return (
           <>
             <StatCard title="Vendas Totais" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={12.5} color="bg-orange-600" />
-            <StatCard title="Pedidos Ativos" value={stats.totalOrders || 0} icon={ShoppingCart} trend={-2.4} color="bg-blue-600" />
-            <StatCard title="Usuários Totais" value={stats.totalUsers || 0} icon={Users} trend={8.1} color="bg-purple-600" />
-            <StatCard title="Produtos Cadastrados" value={stats.totalProducts || 0} icon={Package} color="bg-zinc-600" />
+            <StatCard title="Pedidos Ativos" value={stats.totalOrders || 0} icon={ShoppingCart} trend={-2.4} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Usuários Totais" value={stats.totalUsers || 0} icon={Users} trend={8.1} color="bg-purple-600" onClick={() => navigate('/admin/users')} />
+            <StatCard title="Produtos Cadastrados" value={stats.totalProducts || 0} icon={Package} color="bg-zinc-600" onClick={() => navigate('/products')} />
           </>
         );
       case 'supplier':
         return (
           <>
             <StatCard title="Minhas Vendas" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={15.2} color="bg-orange-600" />
-            <StatCard title="Pedidos Ativos" value={stats.activeOrders || 0} icon={ShoppingCart} color="bg-blue-600" />
-            <StatCard title="Meus Produtos" value={stats.myProducts || 0} icon={Package} color="bg-purple-600" />
-            <StatCard title="Baixo Estoque" value="2" icon={AlertCircle} color="bg-red-600" />
+            <StatCard title="Pedidos Ativos" value={stats.activeOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Meus Produtos" value={stats.myProducts || 0} icon={Package} color="bg-purple-600" onClick={() => navigate('/products')} />
+            <StatCard title="Baixo Estoque" value="2" icon={AlertCircle} color="bg-red-600" onClick={() => navigate('/products')} />
           </>
         );
       case 'retailer':
         return (
           <>
             <StatCard title="Total Comprado" value={formatCurrency(stats.totalSpent || 0)} icon={DollarSign} color="bg-orange-600" />
-            <StatCard title="Meus Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" />
-            <StatCard title="Entregas Pendentes" value="1" icon={Truck} color="bg-purple-600" />
-            <StatCard title="Produtos Favoritos" value="12" icon={Package} color="bg-zinc-600" />
+            <StatCard title="Meus Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Entregas Pendentes" value="1" icon={Truck} color="bg-purple-600" onClick={() => navigate('/deliveries')} />
+            <StatCard title="Produtos Favoritos" value="12" icon={Package} color="bg-zinc-600" onClick={() => navigate('/catalog')} />
           </>
         );
       case 'driver':
         return (
           <>
-            <StatCard title="Minhas Entregas" value={stats.myDeliveries || 0} icon={Truck} color="bg-orange-600" />
-            <StatCard title="Concluídas" value={stats.completed || 0} icon={CheckCircle2} color="bg-emerald-600" />
+            <StatCard title="Minhas Entregas" value={stats.myDeliveries || 0} icon={Truck} color="bg-orange-600" onClick={() => navigate('/deliveries')} />
+            <StatCard title="Concluídas" value={stats.completed || 0} icon={CheckCircle2} color="bg-emerald-600" onClick={() => navigate('/deliveries')} />
             <StatCard title="Ganhos Estimados" value={formatCurrency(450.00)} icon={DollarSign} color="bg-blue-600" />
             <StatCard title="Avaliação" value="4.9" icon={TrendingUp} color="bg-purple-600" />
           </>
         );
       default:
-        return null;
+        return (
+          <>
+            <StatCard title="Bem-vindo" value={profile?.full_name || 'Usuário'} icon={Users} color="bg-zinc-600" />
+            <StatCard title="Meus Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Configurações" value="Perfil" icon={Settings} color="bg-purple-600" onClick={() => navigate('/settings')} />
+            <StatCard title="Catálogo" value="Produtos" icon={Package} color="bg-orange-600" onClick={() => navigate('/catalog')} />
+          </>
+        );
     }
   };
 
@@ -296,7 +310,7 @@ export default function Dashboard() {
             )}
           </div>
           <button 
-            onClick={() => toast.info('Redirecionando para pedidos...')}
+            onClick={() => navigate('/orders')}
             className="w-full mt-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-semibold transition-all"
           >
             Ver todos os pedidos

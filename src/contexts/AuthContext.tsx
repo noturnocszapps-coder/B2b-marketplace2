@@ -21,16 +21,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        // fetchProfile(session.user.id);
       } else {
         setLoading(false);
       }
     });
 
+    let profileSubscription: any = null;
+
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      
+      if (profileSubscription) {
+        supabase.removeChannel(profileSubscription);
+        profileSubscription = null;
+      }
+
       if (session?.user) {
+        const channel = supabase
+          .channel(`profile:${session.user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=eq.${session.user.id}`
+            },
+            (payload: any) => {
+              if (payload.new) {
+                setProfile(payload.new);
+              }
+            }
+          )
+          .subscribe();
+        
+        profileSubscription = channel;
+        
+        // Initial fetch
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
@@ -38,7 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (profileSubscription) supabase.removeChannel(profileSubscription);
+    };
   }, []);
 
   async function fetchProfile(userId: string) {

@@ -24,6 +24,7 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -31,6 +32,7 @@ export default function Products() {
     price: 0,
     stock_quantity: 0,
     category_id: '',
+    supplier_id: '',
     image_url: '',
     is_active: true
   });
@@ -39,6 +41,9 @@ export default function Products() {
     if (profile) {
       fetchProducts();
       fetchCategories();
+      if (profile.role === 'admin') {
+        fetchSuppliers();
+      }
     }
   }, [profile]);
 
@@ -50,6 +55,7 @@ export default function Products() {
         price: editingProduct.price,
         stock_quantity: editingProduct.stock_quantity,
         category_id: editingProduct.category_id,
+        supplier_id: editingProduct.supplier_id,
         image_url: editingProduct.image_url || '',
         is_active: editingProduct.is_active
       });
@@ -60,6 +66,7 @@ export default function Products() {
         price: 0,
         stock_quantity: 0,
         category_id: '',
+        supplier_id: '',
         image_url: '',
         is_active: true
       });
@@ -71,12 +78,21 @@ export default function Products() {
     setCategories(data || []);
   }
 
+  async function fetchSuppliers() {
+    const { data } = await supabase
+      .from('companies')
+      .select('id, name')
+      .eq('type', 'supplier')
+      .order('name');
+    setSuppliers(data || []);
+  }
+
   async function fetchProducts() {
     setLoading(true);
     try {
       let query = supabase
         .from('products')
-        .select('*, category:categories(name, parent_category)');
+        .select('*, category:categories(name, parent_category), supplier:companies(name)');
 
       if (profile?.role === 'supplier') {
         const { data: company } = await supabase
@@ -105,18 +121,28 @@ export default function Products() {
     setLoading(true);
 
     try {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('profile_id', profile?.id)
-        .single();
+      let finalSupplierId = formData.supplier_id;
 
-      if (!company) throw new Error('Empresa não encontrada');
+      if (profile?.role !== 'admin') {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('profile_id', profile?.id)
+          .single();
+
+        if (!company) throw new Error('Empresa não encontrada');
+        finalSupplierId = company.id;
+      } else if (!finalSupplierId) {
+        throw new Error('Selecione um fornecedor');
+      }
 
       if (editingProduct) {
         const { error } = await supabase
           .from('products')
-          .update(formData)
+          .update({
+            ...formData,
+            supplier_id: finalSupplierId
+          })
           .eq('id', editingProduct.id);
         if (error) throw error;
         toast.success('Produto atualizado com sucesso!');
@@ -125,7 +151,7 @@ export default function Products() {
           .from('products')
           .insert({
             ...formData,
-            supplier_id: company.id
+            supplier_id: finalSupplierId
           });
         if (error) throw error;
         toast.success('Produto cadastrado com sucesso!');
@@ -197,6 +223,9 @@ export default function Products() {
             <thead>
               <tr className="border-b border-white/5 bg-white/5">
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Produto</th>
+                {profile?.role === 'admin' && (
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Fornecedor</th>
+                )}
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Categoria</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Preço</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Estoque</th>
@@ -207,11 +236,11 @@ export default function Products() {
             <tbody className="divide-y divide-white/5">
               {loading && products.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-zinc-500">Carregando produtos...</td>
+                  <td colSpan={profile?.role === 'admin' ? 7 : 6} className="px-6 py-10 text-center text-zinc-500">Carregando produtos...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center">
+                  <td colSpan={profile?.role === 'admin' ? 7 : 6} className="px-6 py-20 text-center">
                     <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Package size={32} className="text-zinc-700" />
                     </div>
@@ -236,6 +265,13 @@ export default function Products() {
                         </div>
                       </div>
                     </td>
+                    {profile?.role === 'admin' && (
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-zinc-400">
+                          {product.supplier?.name}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <span className="text-sm text-zinc-400">
                         {product.category?.name}
@@ -322,6 +358,22 @@ export default function Products() {
                       onChange={e => setFormData({...formData, name: e.target.value})}
                     />
                   </div>
+                  {profile?.role === 'admin' && (
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium text-zinc-400">Fornecedor (Ação Administrativa)</label>
+                      <select 
+                        required
+                        className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                        value={formData.supplier_id}
+                        onChange={e => setFormData({...formData, supplier_id: e.target.value})}
+                      >
+                        <option value="">Selecione um fornecedor</option>
+                        {suppliers.map(sup => (
+                          <option key={sup.id} value={sup.id}>{sup.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-sm font-medium text-zinc-400">Categoria</label>
                     <select 

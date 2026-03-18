@@ -32,7 +32,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/blocked" replace />;
   }
 
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+  if (allowedRoles && profile && profile.role !== 'admin' && !allowedRoles.includes(profile.role)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

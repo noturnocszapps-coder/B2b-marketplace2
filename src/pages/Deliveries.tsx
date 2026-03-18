@@ -240,17 +240,23 @@ export default function Deliveries() {
                 </div>
 
                 <div className="lg:w-64 flex flex-col justify-center gap-3">
-                  {delivery.status === 'aguardando entregador' && profile?.role === 'driver' && (
+                  {delivery.status === 'aguardando entregador' && (profile?.role === 'driver' || profile?.role === 'admin') && (
                     <button 
                       disabled={updatingId === delivery.id}
-                      onClick={() => acceptDelivery(delivery.id)}
+                      onClick={() => {
+                        if (profile?.role === 'admin') {
+                          updateStatus(delivery.id, 'aceita');
+                        } else {
+                          acceptDelivery(delivery.id);
+                        }
+                      }}
                       className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {updatingId === delivery.id ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Aceitar Entrega'}
                     </button>
                   )}
 
-                  {delivery.status === 'aceita' && profile?.role === 'driver' && (
+                  {delivery.status === 'aceita' && (profile?.role === 'driver' || profile?.role === 'admin') && (
                     <button 
                       disabled={updatingId === delivery.id}
                       onClick={() => updateStatus(delivery.id, 'em coleta')}
@@ -260,7 +266,7 @@ export default function Deliveries() {
                     </button>
                   )}
 
-                  {delivery.status === 'em coleta' && profile?.role === 'driver' && (
+                  {delivery.status === 'em coleta' && (profile?.role === 'driver' || profile?.role === 'admin') && (
                     <button 
                       disabled={updatingId === delivery.id}
                       onClick={() => updateStatus(delivery.id, 'saiu para entrega')}
@@ -270,7 +276,7 @@ export default function Deliveries() {
                     </button>
                   )}
 
-                  {delivery.status === 'saiu para entrega' && profile?.role === 'driver' && (
+                  {delivery.status === 'saiu para entrega' && (profile?.role === 'driver' || profile?.role === 'admin') && (
                     <button 
                       disabled={updatingId === delivery.id}
                       onClick={() => updateStatus(delivery.id, 'entregue')}

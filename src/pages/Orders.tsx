@@ -46,12 +46,22 @@ export default function Orders() {
         .order('created_at', { ascending: false });
 
       if (profile?.role === 'retailer') {
-        const { data: company } = await supabase
+        const { data: company, error: companyError } = await supabase
           .from('companies')
           .select('id')
           .eq('profile_id', profile.id)
-          .single();
-        if (company) query = query.eq('retailer_id', company.id);
+          .maybeSingle();
+        
+        if (companyError) throw companyError;
+        
+        if (company) {
+          query = query.eq('retailer_id', company.id);
+        } else {
+          // If no company found for retailer, they should see no orders
+          setOrders([]);
+          setLoading(false);
+          return;
+        }
       }
 
       const { data, error } = await query;

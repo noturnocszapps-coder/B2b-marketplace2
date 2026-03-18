@@ -28,7 +28,7 @@ interface SidebarItem {
 const sidebarItems: SidebarItem[] = [
   { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'supplier', 'retailer', 'driver'] },
   { title: 'Produtos', path: '/products', icon: Package, roles: ['admin', 'supplier'] },
-  { title: 'Catálogo', path: '/catalog', icon: Store, roles: ['retailer'] },
+  { title: 'Catálogo', path: '/catalog', icon: Store, roles: ['admin', 'retailer'] },
   { title: 'Pedidos', path: '/orders', icon: ShoppingCart, roles: ['admin', 'supplier', 'retailer'] },
   { title: 'Entregas', path: '/deliveries', icon: Truck, roles: ['admin', 'driver'] },
   { title: 'Usuários', path: '/admin/users', icon: Users, roles: ['admin'] },
@@ -44,6 +44,11 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     profile && item.roles.includes(profile.role)
   );
 
+  // Fallback items if for some reason filteredItems is empty but user is logged in
+  const displayItems = filteredItems.length > 0 ? filteredItems : (
+    profile ? sidebarItems.filter(item => item.path === '/dashboard' || item.path === '/settings') : []
+  );
+
   return (
     <div className="min-h-screen bg-[#050505] text-white flex font-sans">
       {/* Desktop Sidebar */}
@@ -56,7 +61,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-1">
-          {filteredItems.map((item) => {
+          {displayItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link
@@ -118,7 +123,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
             className="md:hidden fixed inset-0 bg-[#0A0A0A] z-40 pt-20 px-6"
           >
             <nav className="space-y-2">
-              {filteredItems.map((item) => (
+              {displayItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}

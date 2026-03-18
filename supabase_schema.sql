@@ -132,18 +132,30 @@
   ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
   ALTER TABLE deliveries ENABLE ROW LEVEL SECURITY;
 
+  -- Helper function to check if user is admin
+  -- CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
+  --   SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin');
+  -- $$ LANGUAGE sql SECURITY DEFINER;
+
   -- Profiles: Users can read their own profile, admins can read all
   CREATE POLICY "Users can read own profile" ON profiles FOR SELECT USING (auth.uid() = id);
   CREATE POLICY "Admins can read all profiles" ON profiles FOR SELECT USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
   CREATE POLICY "Admins can update all profiles" ON profiles FOR UPDATE USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
-  -- Products: Everyone can read active products, suppliers can manage their own
-  CREATE POLICY "Anyone can read active products" ON products FOR SELECT USING (is_active = true);
+  -- Companies: Admins can manage all, users can manage their own
+  CREATE POLICY "Admins can manage all companies" ON companies FOR ALL USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  CREATE POLICY "Users can manage own company" ON companies FOR ALL USING (profile_id = auth.uid());
+
+  -- Products: Everyone can read active products, suppliers can manage their own, admins manage all
+  CREATE POLICY "Anyone can read active products" ON products FOR SELECT USING (is_active = true OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
   CREATE POLICY "Suppliers can manage own products" ON products FOR ALL USING (
-    EXISTS (SELECT 1 FROM companies WHERE id = products.supplier_id AND profile_id = auth.uid())
+    EXISTS (SELECT 1 FROM companies WHERE id = products.supplier_id AND profile_id = auth.uid()) OR
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
   -- Orders: Retailers can see their own, suppliers can see orders with their items, admins see all
+  CREATE POLICY "Admins can see all orders" ON orders FOR SELECT USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  CREATE POLICY "Admins can update all orders" ON orders FOR UPDATE USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
   CREATE POLICY "Retailers can see own orders" ON orders FOR SELECT USING (
     EXISTS (SELECT 1 FROM companies WHERE id = orders.retailer_id AND profile_id = auth.uid())
   );
@@ -151,7 +163,16 @@
     EXISTS (SELECT 1 FROM companies WHERE id = retailer_id AND profile_id = auth.uid())
   );
 
+  -- Order Items: Admins see all, others see related
+  CREATE POLICY "Admins can see all order items" ON order_items FOR SELECT USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  CREATE POLICY "Users can see related order items" ON order_items FOR SELECT USING (
+    EXISTS (SELECT 1 FROM orders WHERE id = order_items.order_id AND (
+      EXISTS (SELECT 1 FROM companies WHERE id = orders.retailer_id AND profile_id = auth.uid())
+    ))
+  );
+
   -- Deliveries: Drivers can see available or their own, admins see all
+  CREATE POLICY "Admins can manage all deliveries" ON deliveries FOR ALL USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
   CREATE POLICY "Drivers can see available or own deliveries" ON deliveries FOR SELECT USING (
     status = 'aguardando entregador' OR 
     EXISTS (SELECT 1 FROM delivery_drivers WHERE id = deliveries.driver_id AND profile_id = auth.uid())
@@ -160,4 +181,12 @@
     EXISTS (SELECT 1 FROM delivery_drivers WHERE id = deliveries.driver_id AND profile_id = auth.uid()) OR
     (status = 'aguardando entregador' AND driver_id IS NULL)
   );
+  -- MIGRATIONS (Run these if not already present)
+  -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+  -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"approval": true, "new_order": true, "order_status": true, "delivery": true}'::jsonb;
+  
+  -- STORAGE BUCKETS
+  -- INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO NOTHING;
+  -- CREATE POLICY "Avatar images are publicly accessible" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+  -- CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
 */

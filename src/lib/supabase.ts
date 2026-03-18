@@ -22,6 +22,13 @@ export interface Profile {
   full_name: string | null;
   role: UserRole;
   status: UserStatus;
+  avatar_url: string | null;
+  notification_preferences: {
+    approval: boolean;
+    new_order: boolean;
+    order_status: boolean;
+    delivery: boolean;
+  } | null;
   created_at: string;
 }
 

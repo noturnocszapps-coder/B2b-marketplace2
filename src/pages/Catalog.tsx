@@ -104,18 +104,59 @@ export default function Catalog() {
     setIsCheckingOut(true);
 
     try {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('profile_id', profile.id)
-        .single();
+      let finalRetailerId = '';
 
-      if (!company) throw new Error('Empresa não encontrada');
+      if (profile.role === 'admin') {
+        // For admin, we could show a selector, but for now let's just pick the first retailer 
+        // or throw a more informative error.
+        const { data: firstRetailer, error: fetchError } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('type', 'retailer')
+          .limit(1)
+          .maybeSingle();
+        
+        if (fetchError || !firstRetailer) {
+          throw new Error('Nenhum lojista cadastrado no sistema para realizar o pedido administrativo.');
+        }
+        finalRetailerId = firstRetailer.id;
+      } else {
+        // Try to find the company
+        const { data: company, error: fetchError } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('profile_id', profile.id)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (!company) {
+          // If company is missing for a retailer, try to create it on the fly
+          if (profile.role === 'retailer') {
+            const { data: newCompany, error: createError } = await supabase
+              .from('companies')
+              .insert({
+                profile_id: profile.id,
+                name: profile.full_name || 'Minha Empresa',
+                type: 'retailer'
+              })
+              .select()
+              .single();
+            
+            if (createError) throw new Error('Não foi possível vincular uma empresa ao seu perfil. Por favor, contate o suporte.');
+            finalRetailerId = newCompany.id;
+          } else {
+            throw new Error('Empresa não encontrada para o seu perfil.');
+          }
+        } else {
+          finalRetailerId = company.id;
+        }
+      }
 
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
-          retailer_id: company.id,
+          retailer_id: finalRetailerId,
           total_amount: cartTotal,
           status: 'pendente',
           pix_code: 'PIX_CODE_MOCK_' + Math.random().toString(36).substring(7).toUpperCase()
