@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Package, ArrowRight, CheckCircle2, User, Building2, Truck as TruckIcon, Mail, Lock, Phone, FileText, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -8,9 +8,17 @@ import { toast } from 'sonner';
 
 export default function Register() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [role, setRole] = useState<'supplier' | 'retailer' | 'driver'>('retailer');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    const roleParam = searchParams.get('role');
+    if (roleParam === 'supplier' || roleParam === 'retailer' || roleParam === 'driver') {
+      setRole(roleParam as 'supplier' | 'retailer' | 'driver');
+    }
+  }, [searchParams]);
 
   const [formData, setFormData] = useState({
     email: '',

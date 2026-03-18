@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 // Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
+import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
 import Catalog from './pages/Catalog';
@@ -23,6 +24,7 @@ export default function App() {
       <Router>
         <Routes>
           {/* Public Routes */}
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/pending-approval" element={<PendingApproval />} />
@@ -87,8 +89,7 @@ export default function App() {
           } />
 
           {/* Default Redirects */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </AuthProvider>
