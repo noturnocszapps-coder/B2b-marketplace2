@@ -41,6 +41,9 @@ export interface Company {
   whatsapp: string;
   responsible_name: string;
   type: 'supplier' | 'retailer';
+  pix_key_type?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+  pix_key?: string;
+  pix_recipient_name?: string;
 }
 
 export interface DeliveryDriver {

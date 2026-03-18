@@ -26,6 +26,9 @@ export default function Settings() {
   const [address, setAddress] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [responsibleName, setResponsibleName] = useState('');
+  const [pixKeyType, setPixKeyType] = useState<string>('');
+  const [pixKey, setPixKey] = useState('');
+  const [pixRecipientName, setPixRecipientName] = useState('');
 
   React.useEffect(() => {
     if (profile && (profile.role === 'retailer' || profile.role === 'supplier')) {
@@ -49,6 +52,9 @@ export default function Settings() {
         setAddress(data.address || '');
         setWhatsapp(data.whatsapp || '');
         setResponsibleName(data.responsible_name || '');
+        setPixKeyType(data.pix_key_type || '');
+        setPixKey(data.pix_key || '');
+        setPixRecipientName(data.pix_recipient_name || '');
       }
     } catch (error: any) {
       console.error('Erro ao carregar empresa:', error.message);
@@ -61,16 +67,21 @@ export default function Settings() {
     setLoading(true);
 
     try {
+      const companyData = {
+        name: companyName,
+        cnpj,
+        address,
+        whatsapp,
+        responsible_name: responsibleName,
+        pix_key_type: pixKeyType,
+        pix_key: pixKey,
+        pix_recipient_name: pixRecipientName
+      };
+
       if (company) {
         const { error } = await supabase
           .from('companies')
-          .update({
-            name: companyName,
-            cnpj,
-            address,
-            whatsapp,
-            responsible_name: responsibleName
-          })
+          .update(companyData)
           .eq('id', company.id);
         
         if (error) throw error;
@@ -79,12 +90,8 @@ export default function Settings() {
         const { data, error } = await supabase
           .from('companies')
           .insert({
+            ...companyData,
             profile_id: profile.id,
-            name: companyName,
-            cnpj,
-            address,
-            whatsapp,
-            responsible_name: responsibleName,
             type: profile.role
           })
           .select()
@@ -413,6 +420,48 @@ export default function Settings() {
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all"
                   />
+                </div>
+
+                {/* Pix Configuration */}
+                <div className="sm:col-span-2 pt-6 border-t border-white/5">
+                  <h4 className="text-lg font-bold mb-4">Configuração de Pagamento Pix</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Tipo de Chave Pix</label>
+                      <select 
+                        value={pixKeyType}
+                        onChange={(e) => setPixKeyType(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all appearance-none"
+                      >
+                        <option value="" className="bg-[#0A0A0A]">Selecione o tipo</option>
+                        <option value="cpf" className="bg-[#0A0A0A]">CPF</option>
+                        <option value="cnpj" className="bg-[#0A0A0A]">CNPJ</option>
+                        <option value="email" className="bg-[#0A0A0A]">E-mail</option>
+                        <option value="phone" className="bg-[#0A0A0A]">Telefone</option>
+                        <option value="random" className="bg-[#0A0A0A]">Chave Aleatória</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Chave Pix</label>
+                      <input 
+                        type="text" 
+                        value={pixKey}
+                        onChange={(e) => setPixKey(e.target.value)}
+                        placeholder="Sua chave Pix"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 space-y-2">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Nome do Favorecido (Recipient)</label>
+                      <input 
+                        type="text" 
+                        value={pixRecipientName}
+                        onChange={(e) => setPixRecipientName(e.target.value)}
+                        placeholder="Nome completo do titular da conta"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 

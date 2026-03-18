@@ -9,11 +9,20 @@ import {
   Plus, 
   Minus,
   CheckCircle2,
-  X
+  X,
+  Copy,
+  ExternalLink,
+  QrCode,
+  ChevronRight,
+  Info,
+  Trash2
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { generatePixPayload } from '../lib/pix';
+import { QRCodeSVG } from 'qrcode.react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Catalog() {
   const { profile } = useAuth();
@@ -21,6 +30,9 @@ export default function Catalog() {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [currentOrder, setCurrentOrder] = useState<any>(null);
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [cart, setCart] = useState<{product: Product, quantity: number}[]>([]);
@@ -104,6 +116,20 @@ export default function Catalog() {
     setIsCheckingOut(true);
 
     try {
+      // Identify the supplier from the first item in cart
+      const supplierId = cart[0].product.supplier_id;
+      const { data: supplierCompany, error: supplierError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', supplierId)
+        .single();
+      
+      if (supplierError || !supplierCompany) throw new Error('Fornecedor não encontrado.');
+      
+      if (!supplierCompany.pix_key) {
+        throw new Error('Fornecedor sem chave Pix cadastrada. O checkout não pode ser concluído.');
+      }
+
       let finalRetailerId = '';
 
       if (profile.role === 'admin') {
@@ -153,31 +179,44 @@ export default function Catalog() {
         }
       }
 
+      // Generate Pix Payload
+      const pixCode = generatePixPayload({
+        key: supplierCompany.pix_key,
+        recipient: supplierCompany.pix_recipient_name || supplierCompany.name,
+        city: supplierCompany.address?.split(',')[0] || 'SAO PAULO',
+        amount: cartTotal,
+        description: `Pedido B2B Market`
+      });
+
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
           retailer_id: finalRetailerId,
           total_amount: cartTotal,
-          status: 'pendente',
-          pix_code: 'PIX_CODE_MOCK_' + Math.random().toString(36).substring(7).toUpperCase()
+          status: 'aguardando pagamento',
+          pix_code: pixCode
         })
-        .select()
+        .select('*, retailer:companies(name, whatsapp)')
         .single();
 
       if (orderError) throw orderError;
 
-      for (const item of cart) {
-        const { error: itemError } = await supabase
-          .from('order_items')
-          .insert({
-            order_id: order.id,
-            product_id: item.product.id,
-            quantity: item.quantity,
-            price_at_purchase: item.product.price
-          });
-        
-        if (itemError) throw itemError;
+      // Create order items
+      const orderItems = cart.map(item => ({
+        order_id: order.id,
+        product_id: item.product.id,
+        quantity: item.quantity,
+        price_at_purchase: item.product.price
+      }));
 
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
+      // Update stock
+      for (const item of cart) {
         const { error: stockError } = await supabase
           .from('products')
           .update({ stock_quantity: item.product.stock_quantity - item.quantity })
@@ -186,6 +225,7 @@ export default function Catalog() {
         if (stockError) throw stockError;
       }
 
+      // Create delivery record
       await supabase
         .from('deliveries')
         .insert({
@@ -193,9 +233,17 @@ export default function Catalog() {
           status: 'aguardando entregador'
         });
 
+      // Add supplier info to order object for the modal
+      const orderWithSupplier = {
+        ...order,
+        supplier: supplierCompany
+      };
+
+      setCurrentOrder(orderWithSupplier);
+      setShowPaymentModal(true);
       setCart([]);
       setIsCartOpen(false);
-      toast.success('Pedido realizado com sucesso!');
+      toast.success('Pedido criado com sucesso! Aguardando pagamento.');
     } catch (error: any) {
       toast.error('Erro ao finalizar pedido: ' + error.message);
     } finally {
@@ -452,6 +500,139 @@ export default function Catalog() {
               )}
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Modal */}
+      <AnimatePresence>
+        {showPaymentModal && currentOrder && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPaymentModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-orange-600/10 to-transparent">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center text-orange-500">
+                    <QrCode size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Pagamento Pix</h3>
+                    <p className="text-xs text-zinc-500">Pedido #{currentOrder.id.substring(0, 8)}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowPaymentModal(false)}
+                  className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                {/* Status Badge */}
+                <div className="flex justify-center">
+                  <div className="px-4 py-2 rounded-full bg-orange-600/10 border border-orange-600/20 text-orange-500 text-sm font-bold flex items-center gap-2 animate-pulse">
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                    Aguardando Pagamento
+                  </div>
+                </div>
+
+                {/* QR Code */}
+                <div className="flex flex-col items-center gap-4">
+                  <div className="p-4 bg-white rounded-2xl shadow-inner">
+                    <QRCodeSVG 
+                      value={currentOrder.pix_code || ''} 
+                      size={200}
+                      level="H"
+                      includeMargin={false}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 text-center max-w-[200px]">
+                    Escaneie o QR Code acima com o aplicativo do seu banco
+                  </p>
+                </div>
+
+                {/* Amount */}
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                  <span className="text-zinc-400">Valor Total</span>
+                  <span className="text-2xl font-bold text-orange-500">
+                    {formatCurrency(currentOrder.total_amount)}
+                  </span>
+                </div>
+
+                {/* Pix Code Copy */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">
+                    Código Copia e Cola
+                  </label>
+                  <div className="relative group">
+                    <div className="w-full p-4 pr-12 bg-white/5 border border-white/10 rounded-2xl text-xs font-mono break-all text-zinc-300">
+                      {currentOrder.pix_code}
+                    </div>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentOrder.pix_code || '');
+                        toast.success('Código Pix copiado!');
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center hover:bg-orange-700 transition-all shadow-lg shadow-orange-600/20 active:scale-95"
+                    >
+                      <Copy size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Supplier Info */}
+                <div className="p-4 rounded-2xl bg-orange-600/5 border border-orange-600/10 space-y-3">
+                  <div className="flex items-center gap-2 text-orange-500 font-bold text-sm">
+                    <Info size={16} />
+                    <span>Dados do Recebedor</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <p className="text-zinc-500 mb-1">Empresa</p>
+                      <p className="font-medium">{currentOrder.supplier?.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500 mb-1">Chave Pix</p>
+                      <p className="font-medium truncate">{currentOrder.supplier?.pix_key}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-6 bg-white/5 border-t border-white/10 grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => navigate('/orders')}
+                  className="py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold transition-all flex items-center justify-center gap-2"
+                >
+                  Ver Meus Pedidos
+                </button>
+                <button 
+                  onClick={() => {
+                    const message = encodeURIComponent(`Olá, acabei de realizar o pedido #${currentOrder.id.substring(0, 8)} e gostaria de confirmar o pagamento.`);
+                    window.open(`https://wa.me/${currentOrder.supplier?.whatsapp?.replace(/\D/g, '')}?text=${message}`, '_blank');
+                  }}
+                  className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                >
+                  <ExternalLink size={18} />
+                  WhatsApp
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
