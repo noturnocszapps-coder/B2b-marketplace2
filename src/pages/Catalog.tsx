@@ -16,7 +16,15 @@ import {
   ChevronRight,
   Info,
   Trash2,
-  Star
+  Star,
+  Zap,
+  Truck,
+  Moon,
+  Clock,
+  ChevronDown,
+  ArrowUpDown,
+  LayoutGrid,
+  Sparkles
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -38,6 +46,14 @@ export default function Catalog() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState('featured');
+  const [activeFilters, setActiveFilters] = useState({
+    featured: false,
+    available: false,
+    freeShipping: false,
+    nightService: false,
+    is24h: false
+  });
   const [cart, setCart] = useState<{product: Product, quantity: number}[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
@@ -331,22 +347,64 @@ export default function Catalog() {
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            p.category?.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
-      return matchesSearch && matchesCategory;
+      
+      const supplier = p.supplier as any;
+      const status = getSupplierStatus(supplier);
+      
+      const matchesFeatured = !activeFilters.featured || supplier?.is_featured;
+      const matchesAvailable = !activeFilters.available || status !== 'indisponivel';
+      const matchesFreeShipping = !activeFilters.freeShipping || supplier?.free_shipping_enabled;
+      const matchesNight = !activeFilters.nightService || supplier?.night_service;
+      const matches24h = !activeFilters.is24h || supplier?.is_24h;
+
+      return matchesSearch && matchesCategory && matchesFeatured && matchesAvailable && matchesFreeShipping && matchesNight && matches24h;
     })
     .sort((a, b) => {
-      const aPlan = getCompanyPlan(a.supplier as any);
-      const bPlan = getCompanyPlan(b.supplier as any);
+      const aSupplier = a.supplier as any;
+      const bSupplier = b.supplier as any;
+      const aPlan = getCompanyPlan(aSupplier);
+      const bPlan = getCompanyPlan(bSupplier);
       
       const planPriority = { premium: 3, featured: 2, free: 1 };
       const aPriority = planPriority[aPlan] || 1;
       const bPriority = planPriority[bPlan] || 1;
-      
-      if (bPriority !== aPriority) {
-        return bPriority - aPriority;
+
+      // Base sorting by plan first if not explicitly sorted by price
+      if (sortBy === 'featured') {
+        if (bPriority !== aPriority) return bPriority - aPriority;
+        if (bSupplier?.is_featured !== aSupplier?.is_featured) {
+          return (bSupplier?.is_featured ? 1 : 0) - (aSupplier?.is_featured ? 1 : 0);
+        }
       }
-      
+
+      if (sortBy === 'price_asc') return a.price - b.price;
+      if (sortBy === 'price_desc') return b.price - a.price;
+      if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === 'best_sellers') return (b.stock_quantity || 0) - (a.stock_quantity || 0); // Mock best sellers with stock or similar
+
+      // Default fallback
+      if (bPriority !== aPriority) return bPriority - aPriority;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
+
+  const categoryIcons: Record<string, any> = {
+    'Alimentos': '🍎',
+    'Bebidas': '🥤',
+    'Limpeza': '🧹',
+    'Higiene': '🧼',
+    'Hortifruti': '🥦',
+    'Padaria': '🥖',
+    'Carnes': '🥩',
+    'Laticínios': '🧀',
+    'Congelados': '❄️',
+    'Pet Shop': '🐶',
+    'Bazar': '🎁',
+    'Eletrônicos': '📱'
+  };
+
+  const toggleFilter = (filter: keyof typeof activeFilters) => {
+    setActiveFilters(prev => ({ ...prev, [filter]: !prev[filter] }));
+  };
 
   return (
     <div className="space-y-8 pb-20">
@@ -370,43 +428,133 @@ export default function Catalog() {
       </header>
 
       {/* Search & Filters */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
-          <input 
-            type="text"
-            placeholder="O que você está procurando hoje?"
-            className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-12 pr-4 py-4 focus:outline-none focus:border-orange-500 transition-all text-lg"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1 group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-orange-500 transition-colors" size={20} />
+            <input 
+              type="text"
+              placeholder="O que você está procurando hoje?"
+              className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl pl-12 pr-24 py-4 focus:outline-none focus:border-orange-500 transition-all text-lg shadow-inner"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="p-2 hover:bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              )}
+              <button className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-zinc-400 transition-colors">
+                <Filter size={18} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="relative min-w-[200px]">
+            <select 
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl px-4 py-4 appearance-none focus:outline-none focus:border-orange-500 transition-all font-bold text-sm cursor-pointer"
+            >
+              <option value="featured">Destaques</option>
+              <option value="best_sellers">Mais Vendidos</option>
+              <option value="price_asc">Menor Preço</option>
+              <option value="price_desc">Maior Preço</option>
+              <option value="newest">Mais Recentes</option>
+            </select>
+            <ArrowUpDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+          </div>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+
+        {/* Categories Horizontal Scroll */}
+        <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
           <button 
             onClick={() => setSelectedCategory(null)}
             className={cn(
-              "whitespace-nowrap px-6 py-4 rounded-xl border transition-all font-semibold",
+              "flex flex-col items-center gap-2 min-w-[80px] p-3 rounded-2xl border transition-all group",
               !selectedCategory 
                 ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
-                : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:text-white"
+                : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:border-white/20 hover:text-white"
             )}
           >
-            Todos
+            <div className={cn(
+              "w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110",
+              !selectedCategory ? "bg-white/20" : "bg-white/5"
+            )}>
+              <LayoutGrid size={20} />
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Todos</span>
           </button>
           {categories.map(cat => (
             <button 
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
               className={cn(
-                "whitespace-nowrap px-6 py-4 rounded-xl border transition-all font-semibold",
+                "flex flex-col items-center gap-2 min-w-[80px] p-3 rounded-2xl border transition-all group",
                 selectedCategory === cat.id
                   ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
-                  : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:text-white"
+                  : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:border-white/20 hover:text-white"
               )}
             >
-              {cat.name}
+              <div className={cn(
+                "w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110",
+                selectedCategory === cat.id ? "bg-white/20" : "bg-white/5"
+              )}>
+                {categoryIcons[cat.name] || '📦'}
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider truncate w-full text-center">{cat.name}</span>
             </button>
           ))}
+        </div>
+
+        {/* Quick Filters */}
+        <div className="flex items-center gap-4 overflow-x-auto pb-2 no-scrollbar">
+          <div className="flex gap-2">
+            {[
+              { id: 'featured', label: 'Destaque', icon: <Sparkles size={14} /> },
+              { id: 'available', label: 'Disponível agora', icon: <CheckCircle2 size={14} /> },
+              { id: 'freeShipping', label: 'Frete grátis', icon: <Truck size={14} /> },
+              { id: 'nightService', label: 'Atende à noite', icon: <Moon size={14} /> },
+              { id: 'is24h', label: '24h', icon: <Clock size={14} /> },
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                onClick={() => toggleFilter(filter.id as keyof typeof activeFilters)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold transition-all whitespace-nowrap",
+                  activeFilters[filter.id as keyof typeof activeFilters]
+                    ? "bg-orange-600/20 border-orange-600 text-orange-500 shadow-lg shadow-orange-600/5"
+                    : "bg-white/5 border-white/10 text-zinc-400 hover:border-white/20"
+                )}
+              >
+                {filter.icon}
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          
+          {(Object.values(activeFilters).some(v => v) || selectedCategory || searchTerm) && (
+            <button 
+              onClick={() => {
+                setActiveFilters({
+                  featured: false,
+                  available: false,
+                  freeShipping: false,
+                  nightService: false,
+                  is24h: false
+                });
+                setSelectedCategory(null);
+                setSearchTerm('');
+              }}
+              className="text-[10px] font-bold text-orange-500 uppercase tracking-widest hover:underline whitespace-nowrap"
+            >
+              Limpar Filtros
+            </button>
+          )}
         </div>
       </div>
 
@@ -476,21 +624,48 @@ export default function Catalog() {
             <div className="space-y-1 mb-4">
               <h3 className="font-bold text-lg truncate">{product.name}</h3>
               <div className="flex flex-col gap-2 mb-1">
-                <p className="text-xs text-zinc-500 truncate">Fornecido por: {product.supplier?.name}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-zinc-500 truncate">Fornecido por: {product.supplier?.name}</p>
+                  {product.supplier?.free_shipping_enabled && (
+                    <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
+                      <Truck size={10} />
+                      <span>Frete Grátis</span>
+                    </div>
+                  )}
+                </div>
                 {product.supplier && (
-                  <div className={cn(
-                    "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold w-fit",
-                    STATUS_CONFIG[getSupplierStatus(product.supplier)].bg,
-                    STATUS_CONFIG[getSupplierStatus(product.supplier)].text,
-                    STATUS_CONFIG[getSupplierStatus(product.supplier)].border
-                  )}>
-                    <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].icon}</span>
-                    <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].label}</span>
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold w-fit",
+                      STATUS_CONFIG[getSupplierStatus(product.supplier)].bg,
+                      STATUS_CONFIG[getSupplierStatus(product.supplier)].text,
+                      STATUS_CONFIG[getSupplierStatus(product.supplier)].border
+                    )}>
+                      <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].icon}</span>
+                      <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].label}</span>
+                    </div>
+                    {product.supplier.is_featured && (
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                        <Star size={10} fill="currentColor" />
+                        Destaque
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
               <div className="flex items-center justify-between pt-2">
-                <span className="text-xl font-black text-white">{formatCurrency(product.price)}</span>
+                <div className="flex flex-col">
+                  <span className="text-xl font-black text-white">{formatCurrency(product.price)}</span>
+                  {product.supplier?.free_shipping_enabled ? (
+                    <span className="text-[9px] text-emerald-500 font-bold uppercase">
+                      Frete Grátis {product.supplier.free_shipping_min_value ? `+ ${formatCurrency(product.supplier.free_shipping_min_value)}` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase">
+                      Frete sob consulta
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-zinc-500 font-bold uppercase">Estoque: {product.stock_quantity}</span>
               </div>
             </div>
