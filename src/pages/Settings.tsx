@@ -387,80 +387,87 @@ export default function Settings() {
           {activeTab === 'company' && (
             <div className="space-y-6">
               {/* Plan Info Card */}
-              {profile?.role === 'supplier' && company && (
-                <div className={cn(
-                  "bg-[#0A0A0A] border rounded-3xl p-8 relative overflow-hidden",
-                  (company.plan_type === 'premium' && company.plan_status !== 'expired') ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.1)]" :
-                  (company.plan_type === 'featured' && company.plan_status !== 'expired') ? "border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.1)]" :
-                  "border-white/10"
-                )}>
-                  <div className="relative z-10">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
-                      <div className="flex items-center gap-4">
-                        <div className={cn(
-                          "w-14 h-14 rounded-2xl flex items-center justify-center text-3xl",
-                          company.plan_type === 'premium' ? "bg-orange-600/20 text-orange-500" :
-                          company.plan_type === 'featured' ? "bg-yellow-500/20 text-yellow-500" :
-                          "bg-zinc-800 text-zinc-400"
-                        )}>
-                          {PLAN_CONFIG[company.plan_type as PlanType || 'free'].icon}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-2xl font-bold">Plano {PLAN_CONFIG[company.plan_type as PlanType || 'free'].label}</h3>
-                            <span className={cn(
-                              "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
-                              company.plan_status === 'expired' ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"
-                            )}>
-                              {company.plan_status === 'expired' ? 'Expirado' : 'Ativo'}
-                            </span>
-                          </div>
-                          <p className="text-zinc-500 text-sm">{PLAN_CONFIG[company.plan_type as PlanType || 'free'].description}</p>
-                        </div>
-                      </div>
-                      
-                      <button 
-                        type="button"
-                        onClick={() => toast.info('Gerenciamento de planos em breve!')}
-                        className={cn(
-                          "px-6 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2",
-                          (company.plan_type === 'free' || !company.plan_type) 
-                            ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/20" 
-                            : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
-                        )}
-                      >
-                        {(company.plan_type === 'free' || !company.plan_type) ? (
-                          <>
-                            <span>🔥</span>
-                            Quero mais pedidos
-                          </>
-                        ) : (
-                          'Gerenciar plano'
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Início do Plano</p>
-                        <p className="font-bold">{company.plan_started_at ? new Date(company.plan_started_at).toLocaleDateString('pt-BR') : 'N/A'}</p>
-                      </div>
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Expiração</p>
-                        <p className="font-bold">{company.plan_expires_at ? new Date(company.plan_expires_at).toLocaleDateString('pt-BR') : 'Vitalício'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Background Accents */}
+              {(() => {
+                console.log('PLAN CARD RENDERIZADO');
+                const planType = (company?.plan_type as PlanType) || 'free';
+                const planStatus = company?.plan_status || 'active';
+                const config = PLAN_CONFIG[planType];
+                
+                return (
                   <div className={cn(
-                    "absolute top-0 right-0 w-64 h-64 blur-[100px] opacity-10 -mr-32 -mt-32",
-                    company.plan_type === 'premium' ? "bg-orange-500" :
-                    company.plan_type === 'featured' ? "bg-yellow-500" :
-                    "bg-zinc-500"
-                  )} />
-                </div>
-              )}
+                    "bg-[#0A0A0A] border rounded-3xl p-8 relative overflow-hidden",
+                    (planType === 'premium' && planStatus !== 'expired') ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.1)]" :
+                    (planType === 'featured' && planStatus !== 'expired') ? "border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.1)]" :
+                    "border-white/10"
+                  )}>
+                    <div className="relative z-10">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "w-14 h-14 rounded-2xl flex items-center justify-center text-3xl",
+                            planType === 'premium' ? "bg-orange-600/20 text-orange-500" :
+                            planType === 'featured' ? "bg-yellow-500/20 text-yellow-500" :
+                            "bg-zinc-800 text-zinc-400"
+                          )}>
+                            {config.icon}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-2xl font-bold">Plano {config.label}</h3>
+                              <span className={cn(
+                                "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
+                                planStatus === 'expired' ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"
+                              )}>
+                                {planStatus === 'expired' ? 'Expirado' : 'Ativo'}
+                              </span>
+                            </div>
+                            <p className="text-zinc-500 text-sm">{config.description}</p>
+                          </div>
+                        </div>
+                        
+                        <button 
+                          type="button"
+                          onClick={() => toast.info('Gerenciamento de planos em breve!')}
+                          className={cn(
+                            "px-6 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2",
+                            (planType === 'free') 
+                              ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/20" 
+                              : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                          )}
+                        >
+                          {planType === 'free' ? (
+                            <>
+                              <span>🔥</span>
+                              Quero mais pedidos
+                            </>
+                          ) : (
+                            'Gerenciar plano'
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Início do Plano</p>
+                          <p className="font-bold">{company?.plan_started_at ? new Date(company.plan_started_at).toLocaleDateString('pt-BR') : 'N/A'}</p>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Expiração</p>
+                          <p className="font-bold">{company?.plan_expires_at ? new Date(company.plan_expires_at).toLocaleDateString('pt-BR') : 'Vitalício'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Background Accents */}
+                    <div className={cn(
+                      "absolute top-0 right-0 w-64 h-64 blur-[100px] opacity-10 -mr-32 -mt-32",
+                      planType === 'premium' ? "bg-orange-500" :
+                      planType === 'featured' ? "bg-yellow-500" :
+                      "bg-zinc-500"
+                    )} />
+                  </div>
+                );
+              })()}
 
               <form onSubmit={handleCompanyUpdate} className="bg-[#0A0A0A] border border-white/10 rounded-3xl p-8 space-y-6">
               <div className="pb-6 border-b border-white/5">
