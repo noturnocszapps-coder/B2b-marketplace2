@@ -26,12 +26,7 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
-  { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'supplier', 'retailer', 'driver'] },
-  { title: 'Produtos', path: '/products', icon: Package, roles: ['admin', 'supplier'] },
-  { title: 'Catálogo', path: '/catalog', icon: Store, roles: ['admin', 'retailer'] },
   { title: 'Pedidos', path: '/orders', icon: ShoppingCart, roles: ['admin', 'supplier', 'retailer'] },
-  { title: 'Entregas', path: '/deliveries', icon: Truck, roles: ['admin', 'driver'] },
-  { title: 'Usuários', path: '/admin/users', icon: Users, roles: ['admin'] },
   { title: 'Configurações', path: '/settings', icon: Settings, roles: ['admin', 'supplier', 'retailer', 'driver'] },
 ];
 
@@ -64,20 +59,25 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           {displayItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
-              <Link
+              <motion.div
                 key={item.path}
-                to={item.path}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                  isActive 
-                    ? "bg-orange-600/10 text-orange-500 border border-orange-600/20" 
-                    : "text-zinc-400 hover:text-white hover:bg-white/5"
-                )}
+                whileHover={{ x: 4 }}
+                whileTap={{ scale: 0.98 }}
               >
-                <item.icon size={20} className={isActive ? "text-orange-500" : "group-hover:text-white"} />
-                <span className="font-medium">{item.title}</span>
-                {isActive && <motion.div layoutId="active-pill" className="ml-auto"><ChevronRight size={16} /></motion.div>}
-              </Link>
+                <Link
+                  to={item.path}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                    isActive 
+                      ? "bg-orange-600/10 text-orange-500 border border-orange-600/20" 
+                      : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  )}
+                >
+                  <item.icon size={20} className={isActive ? "text-orange-500" : "group-hover:text-white"} />
+                  <span className="font-medium">{item.title}</span>
+                  {isActive && <motion.div layoutId="active-pill" className="ml-auto"><ChevronRight size={16} /></motion.div>}
+                </Link>
+              </motion.div>
             );
           })}
         </nav>
@@ -151,9 +151,15 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 p-6 md:p-10 pt-24 md:pt-10 overflow-y-auto">
-        <div className="max-w-7xl mx-auto">
+        <motion.div 
+          key={location.pathname}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="max-w-7xl mx-auto"
+        >
           {children}
-        </div>
+        </motion.div>
       </main>
     </div>
   );

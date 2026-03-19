@@ -158,6 +158,18 @@ export default function Products() {
         throw new Error('Selecione um fornecedor');
       }
 
+      // Validação de Taxonomia
+      if (!formData.category_id) throw new Error('Selecione a categoria principal');
+      if (!formData.subcategory) throw new Error('Selecione a subcategoria');
+      
+      const selectedCategoryName = categories.find(c => c.id === formData.category_id)?.name;
+      const taxonomyCategory = TAXONOMY.find(t => t.name === selectedCategoryName);
+      const subcategoryData = taxonomyCategory?.subcategories.find(s => s.name === formData.subcategory);
+      
+      if (subcategoryData?.subtypes && subcategoryData.subtypes.length > 0 && !formData.subtype) {
+        throw new Error('Selecione o subtipo/marca');
+      }
+
       if (editingProduct) {
         const { error } = await supabase
           .from('products')
@@ -397,13 +409,12 @@ export default function Products() {
                     </div>
                   )}
                   <div className="space-y-2 md:col-span-2">
-                    <label className="text-sm font-medium text-zinc-400">Categoria Principal</label>
+                    <label className="text-sm font-medium text-zinc-400">Categoria Principal *</label>
                     <select 
                       required
                       className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
                       value={formData.category_id}
                       onChange={e => {
-                        const cat = categories.find(c => c.id === e.target.value);
                         setFormData({
                           ...formData, 
                           category_id: e.target.value,
@@ -412,44 +423,58 @@ export default function Products() {
                         });
                       }}
                     >
-                      <option value="">Selecione uma categoria</option>
+                      <option value="">Selecione a categoria principal</option>
                       {categories.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
+                    <p className="text-[10px] text-zinc-500">A categoria principal define o grupo geral do produto.</p>
                   </div>
 
                   {formData.category_id && (
                     <>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-zinc-400">Subcategoria</label>
+                        <label className="text-sm font-medium text-zinc-400">Subcategoria *</label>
                         <select 
+                          required
                           className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
                           value={formData.subcategory}
                           onChange={e => setFormData({...formData, subcategory: e.target.value, subtype: ''})}
                         >
-                          <option value="">Selecione uma subcategoria</option>
+                          <option value="">Selecione a subcategoria</option>
                           {TAXONOMY.find(t => t.name === categories.find(c => c.id === formData.category_id)?.name)?.subcategories.map(sub => (
                             <option key={sub.name} value={sub.name}>{sub.name}</option>
                           ))}
                         </select>
+                        <p className="text-[10px] text-zinc-500">Escolha o tipo específico de produto.</p>
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-zinc-400">Subtipo / Marca</label>
-                        <select 
-                          className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
-                          value={formData.subtype}
-                          onChange={e => setFormData({...formData, subtype: e.target.value})}
-                        >
-                          <option value="">Selecione um subtipo</option>
-                          {TAXONOMY.find(t => t.name === categories.find(c => c.id === formData.category_id)?.name)
-                            ?.subcategories.find(s => s.name === formData.subcategory)
-                            ?.subtypes?.map(st => (
-                              <option key={st} value={st}>{st}</option>
-                            ))}
-                        </select>
-                      </div>
+                      {(() => {
+                        const selectedCategoryName = categories.find(c => c.id === formData.category_id)?.name;
+                        const taxonomyCategory = TAXONOMY.find(t => t.name === selectedCategoryName);
+                        const subcategoryData = taxonomyCategory?.subcategories.find(s => s.name === formData.subcategory);
+                        
+                        if (subcategoryData?.subtypes && subcategoryData.subtypes.length > 0) {
+                          return (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-zinc-400">Subtipo / Marca *</label>
+                              <select 
+                                required
+                                className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                                value={formData.subtype}
+                                onChange={e => setFormData({...formData, subtype: e.target.value})}
+                              >
+                                <option value="">Selecione o subtipo</option>
+                                {subcategoryData.subtypes.map(st => (
+                                  <option key={st} value={st}>{st}</option>
+                                ))}
+                              </select>
+                              <p className="text-[10px] text-zinc-500">Especifique a variação ou marca principal.</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </>
                   )}
 

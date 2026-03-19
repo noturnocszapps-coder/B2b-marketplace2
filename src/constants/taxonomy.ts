@@ -17,7 +17,7 @@ export const TAXONOMY: TaxonomyCategory[] = [
       { name: 'Essência', subtypes: ['Zgy', 'Nay', 'Zomo', 'Adalya', 'Onix', 'Magic'] },
       { 
         name: 'Acessórios', 
-        subtypes: ['Rosh', 'Mangueiras', 'Piteiras', 'Acendedor / Panelinha (110v)', 'Acendedor / Panelinha (220v)', 'Borrachas', 'Pegador'] 
+        subtypes: ['Rosh', 'Mangueiras', 'Piteiras', 'Acendedor / Panelinha 110v', 'Acendedor / Panelinha 220v', 'Borrachas', 'Pegador'] 
       }
     ]
   },

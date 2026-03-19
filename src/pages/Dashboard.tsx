@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [repurchaseSuggestions, setRepurchaseSuggestions] = useState<any[]>([]);
 
   useEffect(() => {
     if (profile) {
@@ -135,6 +136,52 @@ export default function Dashboard() {
       
       setRecentOrders(orders || []);
 
+      // Fetch repurchase suggestions for retailers
+      if (profile?.role === 'retailer') {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('profile_id', profile.id)
+          .single();
+
+        if (company) {
+          const { data: items } = await supabase
+            .from('order_items')
+            .select('*, product:products(*)')
+            .eq('order:orders(retailer_id)', company.id);
+
+          if (items) {
+            const productStats: Record<string, { count: number, lastDate: Date, product: any }> = {};
+            
+            items.forEach((item: any) => {
+              if (!item.product) return;
+              const pid = item.product.id;
+              const date = new Date(item.created_at);
+              
+              if (!productStats[pid]) {
+                productStats[pid] = { count: 0, lastDate: date, product: item.product };
+              }
+              
+              productStats[pid].count += 1;
+              if (date > productStats[pid].lastDate) {
+                productStats[pid].lastDate = date;
+              }
+            });
+
+            const now = new Date();
+            const suggestions = Object.values(productStats)
+              .filter(stat => {
+                const daysSinceLast = (now.getTime() - stat.lastDate.getTime()) / (1000 * 60 * 60 * 24);
+                // Suggest if bought more than once and last purchase was > 7 days ago
+                return stat.count >= 2 && daysSinceLast >= 7;
+              })
+              .slice(0, 3); // Limit to 3 suggestions
+
+            setRepurchaseSuggestions(suggestions);
+          }
+        }
+      }
+
     } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -184,19 +231,20 @@ export default function Dashboard() {
       case 'supplier':
         return (
           <>
-            <StatCard title="Minhas Vendas" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={15.2} color="bg-orange-600" />
-            <StatCard title="Pedidos Ativos" value={stats.activeOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
-            <StatCard title="Meus Produtos" value={stats.myProducts || 0} icon={Package} color="bg-purple-600" onClick={() => navigate('/products')} />
-            <StatCard title="Baixo Estoque" value="2" icon={AlertCircle} color="bg-red-600" onClick={() => navigate('/products')} />
+            <StatCard title="Faturamento Mensal" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={15.2} color="bg-orange-600" />
+            <StatCard title="Pedidos Recebidos" value={stats.activeOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Produtos Ativos" value={stats.myProducts || 0} icon={Package} color="bg-purple-600" onClick={() => navigate('/products')} />
+            <StatCard title="Entregas em Andamento" value={stats.ongoingDeliveries || 0} icon={Truck} color="bg-emerald-600" onClick={() => navigate('/deliveries')} />
+            <StatCard title="Estoque Baixo" value={stats.lowStock || 0} icon={AlertCircle} color="bg-red-600" onClick={() => navigate('/products')} />
           </>
         );
       case 'retailer':
         return (
           <>
-            <StatCard title="Total Comprado" value={formatCurrency(stats.totalSpent || 0)} icon={DollarSign} color="bg-orange-600" />
-            <StatCard title="Meus Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
-            <StatCard title="Entregas Pendentes" value="1" icon={Truck} color="bg-purple-600" onClick={() => navigate('/deliveries')} />
-            <StatCard title="Produtos Favoritos" value="12" icon={Package} color="bg-zinc-600" onClick={() => navigate('/catalog')} />
+            <StatCard title="Total Comprado (mês)" value={formatCurrency(stats.totalSpent || 0)} icon={DollarSign} color="bg-orange-600" />
+            <StatCard title="Quantidade de Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
+            <StatCard title="Entregas Pendentes" value={stats.pendingDeliveries || 0} icon={Truck} color="bg-purple-600" onClick={() => navigate('/deliveries')} />
+            <StatCard title="Produtos Favoritos" value={stats.favorites || 0} icon={Package} color="bg-zinc-600" onClick={() => navigate('/catalog')} />
           </>
         );
       case 'driver':
@@ -245,6 +293,53 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Repurchase Alerts (Retailer only) */}
+        {profile?.role === 'retailer' && repurchaseSuggestions.length > 0 && (
+          <div className="lg:col-span-3">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-orange-600/10 border border-orange-600/20 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-600/20">
+                  <AlertCircle size={24} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-orange-500">Seu estoque pode estar acabando</h2>
+                  <p className="text-zinc-400 text-sm">Identificamos produtos que você compra com frequência e faz tempo que não pede.</p>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-3">
+                {repurchaseSuggestions.map((suggestion, i) => (
+                  <div key={i} className="bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-zinc-800 rounded-xl overflow-hidden">
+                      {suggestion.product.image_url ? (
+                        <img src={suggestion.product.image_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package size={16} className="text-zinc-600" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold truncate max-w-[120px]">{suggestion.product.name}</p>
+                      <p className="text-[10px] text-zinc-500">Última compra: {suggestion.lastDate.toLocaleDateString()}</p>
+                    </div>
+                    <button 
+                      onClick={() => navigate('/catalog')}
+                      className="p-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-all"
+                    >
+                      <ShoppingCart size={14} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {/* Chart */}
         <div className="lg:col-span-2 bg-[#0A0A0A] border border-white/10 rounded-3xl p-8">
           <div className="flex items-center justify-between mb-8">
@@ -309,12 +404,23 @@ export default function Dashboard() {
               ))
             )}
           </div>
-          <button 
-            onClick={() => navigate('/orders')}
-            className="w-full mt-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-semibold transition-all"
-          >
-            Ver todos os pedidos
-          </button>
+          <div className="space-y-4">
+            <button 
+              onClick={() => navigate('/orders')}
+              className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-semibold transition-all"
+            >
+              Ver todos os pedidos
+            </button>
+            {profile?.role === 'retailer' && (
+              <button 
+                onClick={() => navigate('/catalog')}
+                className="w-full py-3 bg-orange-600 hover:bg-orange-700 rounded-xl text-sm font-bold transition-all shadow-lg shadow-orange-600/20 flex items-center justify-center gap-2"
+              >
+                <ShoppingCart size={18} />
+                Comprar Novamente
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

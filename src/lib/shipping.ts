@@ -134,3 +134,14 @@ export function getShippingDetails(
     platformFee
   };
 }
+
+export function getEstimatedShipping(supplier: Company) {
+  // Fallback values if not configured
+  const minFee = supplier.free_shipping_enabled ? 0 : 8;
+  const estimatedTime = supplier.is_24h ? '30-60 min' : 'até 2h';
+  
+  return {
+    minFee,
+    estimatedTime
+  };
+}

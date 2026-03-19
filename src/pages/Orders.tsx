@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase, type Order } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { OrderSkeleton } from '../components/Skeleton';
 import { 
   Search, 
   Filter, 
@@ -19,7 +21,8 @@ import {
   Copy,
   ExternalLink,
   X,
-  Info
+  Info,
+  ArrowRight
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
@@ -30,6 +33,7 @@ import { QRCodeSVG } from 'qrcode.react';
 
 export default function Orders() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -100,6 +104,90 @@ export default function Orders() {
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const buyAgain = (order: any) => {
+    if (!order.items || order.items.length === 0) return;
+    
+    const cartItems = order.items.map((item: any) => ({
+      product: item.product,
+      quantity: item.quantity
+    }));
+
+    localStorage.setItem('cart', JSON.stringify(cartItems));
+    toast.success('Itens adicionados ao carrinho!');
+    navigate('/catalog');
+  };
+
+  const OrderStatusStepper = ({ status }: { status: string }) => {
+    const steps = [
+      { id: 'aguardando pagamento', label: 'Pagamento', icon: QrCode },
+      { id: 'pago', label: 'Confirmado', icon: CheckCircle2 },
+      { id: 'em entrega', label: 'Entrega', icon: Truck },
+      { id: 'entregue', label: 'Entregue', icon: Package },
+    ];
+
+    const getStatusIndex = (currentStatus: string) => {
+      if (currentStatus === 'aguardando pagamento') return 0;
+      if (currentStatus === 'pendente' || currentStatus === 'pago') return 1;
+      if (currentStatus === 'em entrega') return 2;
+      if (currentStatus === 'entregue') return 3;
+      return -1;
+    };
+
+    const currentIndex = getStatusIndex(status);
+    if (status === 'cancelado') return (
+      <div className="flex items-center gap-2 text-red-500 bg-red-500/10 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+        <X size={14} />
+        Pedido Cancelado
+      </div>
+    );
+
+    return (
+      <div className="w-full py-4">
+        <div className="flex items-center justify-between relative">
+          {/* Progress Line */}
+          <div className="absolute top-1/2 left-0 w-full h-0.5 bg-zinc-800 -translate-y-1/2 z-0" />
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${(currentIndex / (steps.length - 1)) * 100}%` }}
+            className="absolute top-1/2 left-0 h-0.5 bg-orange-600 -translate-y-1/2 z-0 transition-all duration-500"
+          />
+
+          {steps.map((step, index) => {
+            const Icon = step.icon;
+            const isCompleted = index < currentIndex;
+            const isActive = index === currentIndex;
+            const isPending = index > currentIndex;
+
+            return (
+              <div key={step.id} className="relative z-10 flex flex-col items-center gap-2">
+                <motion.div
+                  initial={false}
+                  animate={{
+                    backgroundColor: isCompleted || isActive ? '#ea580c' : '#18181b',
+                    scale: isActive ? 1.2 : 1,
+                    borderColor: isCompleted || isActive ? '#ea580c' : '#27272a'
+                  }}
+                  className={cn(
+                    "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
+                    isCompleted || isActive ? "text-white" : "text-zinc-600"
+                  )}
+                >
+                  {isCompleted ? <CheckCircle2 size={16} /> : <Icon size={16} />}
+                </motion.div>
+                <span className={cn(
+                  "text-[10px] font-bold uppercase tracking-tighter whitespace-nowrap",
+                  isActive ? "text-orange-500" : isCompleted ? "text-zinc-300" : "text-zinc-600"
+                )}>
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   const getStatusColor = (status: string) => {
@@ -178,7 +266,11 @@ export default function Orders() {
 
       <div className="space-y-4">
         {loading && orders.length === 0 ? (
-          <div className="text-center py-20 text-zinc-500">Carregando pedidos...</div>
+          <div className="space-y-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <OrderSkeleton key={i} />
+            ))}
+          </div>
         ) : filteredOrders.length === 0 ? (
           <div className="text-center py-20 bg-[#0A0A0A] border border-white/10 rounded-3xl">
             <ShoppingCart size={48} className="mx-auto text-zinc-800 mb-4" />
@@ -209,12 +301,6 @@ export default function Orders() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-bold text-lg">#{order.id.slice(0, 8).toUpperCase()}</span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                          getStatusColor(order.status)
-                        )}>
-                          {order.status}
-                        </span>
                       </div>
                       <div className="text-sm text-zinc-500">
                         {format(new Date(order.created_at), "dd 'de' MMMM 'às' HH:mm", { locale: ptBR })}
@@ -222,7 +308,11 @@ export default function Orders() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-8 flex-1 lg:max-w-2xl">
+                  <div className="flex-1 lg:max-w-xl px-4">
+                    <OrderStatusStepper status={order.status} />
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-2 gap-8 flex-1 lg:max-w-sm">
                     <div className="flex flex-col">
                       <span className="text-zinc-500 text-[10px] uppercase tracking-widest font-bold mb-1">Lojista</span>
                       <span className="font-semibold truncate">{order.retailer?.name}</span>
@@ -240,6 +330,18 @@ export default function Orders() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {profile?.role === 'retailer' && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          buyAgain(order);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-orange-600/20"
+                      >
+                        <RefreshCw size={14} />
+                        Comprar Novamente
+                      </button>
+                    )}
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();

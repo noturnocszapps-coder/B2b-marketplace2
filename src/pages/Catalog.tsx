@@ -24,6 +24,7 @@ import {
   Clock,
   ChevronDown,
   ArrowUpDown,
+  Heart,
   LayoutGrid,
   Sparkles
 } from 'lucide-react';
@@ -33,9 +34,10 @@ import { toast } from 'sonner';
 import { generatePixPayload } from '../lib/pix';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
-import { getShippingDetails, type ShippingResult } from '../lib/shipping';
+import { getShippingDetails, getEstimatedShipping, type ShippingResult } from '../lib/shipping';
 import { getSupplierStatus, STATUS_CONFIG, getCompanyPlan, PLAN_CONFIG } from '../lib/supplier';
 import { TAXONOMY } from '../constants/taxonomy';
+import { ProductSkeleton } from '../components/Skeleton';
 
 export default function Catalog() {
   const { profile } = useAuth();
@@ -50,21 +52,32 @@ export default function Catalog() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('featured');
   const [activeFilters, setActiveFilters] = useState({
     featured: false,
     available: false,
     freeShipping: false,
     nightService: false,
-    is24h: false
+    is24h: false,
+    favorites: false
   });
-  const [cart, setCart] = useState<{product: Product, quantity: number}[]>([]);
+  const [cart, setCart] = useState<{product: Product, quantity: number}[]>(() => {
+    const savedCart = localStorage.getItem('cart');
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [shippingDetails, setShippingDetails] = useState<ShippingResult | null>(null);
   const [calculatingShipping, setCalculatingShipping] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('favorites');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   useEffect(() => {
     fetchProducts();
@@ -72,6 +85,14 @@ export default function Catalog() {
     const history = localStorage.getItem('searchHistory');
     if (history) setSearchHistory(JSON.parse(history));
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem('favorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   const addToSearchHistory = (term: string) => {
     if (!term.trim()) return;
@@ -123,7 +144,11 @@ export default function Catalog() {
     }
 
     setAddedProductId(product.id);
-    setTimeout(() => setAddedProductId(null), 1000);
+    setLastAddedId(product.id);
+    setTimeout(() => {
+      setAddedProductId(null);
+      setLastAddedId(null);
+    }, 1500);
 
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
@@ -163,10 +188,43 @@ export default function Catalog() {
         if (newQty === item.product.stock_quantity && delta > 0) {
           toast.warning('Estoque máximo atingido');
         }
+
+        if (delta > 0) {
+          setLastAddedId(productId);
+          setTimeout(() => setLastAddedId(null), 500);
+        }
+
         return { ...item, quantity: newQty };
       }
       return item;
     }));
+  };
+
+  const toggleFavorite = async (productId: string) => {
+    if (!profile) {
+      toast.error('Faça login para favoritar produtos');
+      return;
+    }
+
+    const isFavorite = favorites.includes(productId);
+    if (isFavorite) {
+      setFavorites(prev => prev.filter(id => id !== productId));
+      toast.info('Removido dos favoritos');
+    } else {
+      setFavorites(prev => [...prev, productId]);
+      toast.success('Adicionado aos favoritos');
+    }
+
+    // Attempt to sync with Supabase if a favorites table exists
+    try {
+      if (isFavorite) {
+        await supabase.from('favorites').delete().eq('profile_id', profile.id).eq('product_id', productId);
+      } else {
+        await supabase.from('favorites').insert({ profile_id: profile.id, product_id: productId });
+      }
+    } catch (e) {
+      // Ignore errors if table doesn't exist
+    }
   };
 
   const getProductPrice = (product: Product, quantity: number) => {
@@ -183,6 +241,17 @@ export default function Catalog() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (getProductPrice(item.product, item.quantity) * item.quantity), 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const totalSavings = cart.reduce((sum, item) => {
+    const originalPrice = item.product.price;
+    const discountedPrice = getProductPrice(item.product, item.quantity);
+    return sum + (originalPrice - discountedPrice) * item.quantity;
+  }, 0);
+
+  const getNextDiscount = (product: Product, currentQty: number) => {
+    if (!product.volume_discounts || product.volume_discounts.length === 0) return null;
+    const sortedDiscounts = [...product.volume_discounts].sort((a, b) => a.min_quantity - b.min_quantity);
+    return sortedDiscounts.find(d => currentQty < d.min_quantity);
+  };
 
   // Calculate shipping whenever cart changes
   useEffect(() => {
@@ -387,7 +456,9 @@ export default function Catalog() {
                            p.subcategory?.toLowerCase().includes(searchLower) ||
                            p.brand?.toLowerCase().includes(searchLower) ||
                            p.supplier?.name.toLowerCase().includes(searchLower);
-      const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
+      const matchesCategory = !selectedCategory || p.category?.name === selectedCategory;
+      const matchesSubcategory = !selectedSubcategory || p.subcategory === selectedSubcategory;
+      const matchesSubtype = !selectedSubtype || p.subtype === selectedSubtype || p.brand === selectedSubtype;
       
       const supplier = p.supplier as any;
       const status = getSupplierStatus(supplier);
@@ -397,8 +468,9 @@ export default function Catalog() {
       const matchesFreeShipping = !activeFilters.freeShipping || supplier?.free_shipping_enabled;
       const matchesNight = !activeFilters.nightService || supplier?.night_service;
       const matches24h = !activeFilters.is24h || supplier?.is_24h;
+      const matchesFavorites = !activeFilters.favorites || favorites.includes(p.id);
 
-      return matchesSearch && matchesCategory && matchesFeatured && matchesAvailable && matchesFreeShipping && matchesNight && matches24h;
+      return matchesSearch && matchesCategory && matchesSubcategory && matchesSubtype && matchesFeatured && matchesAvailable && matchesFreeShipping && matchesNight && matches24h && matchesFavorites;
     })
     .sort((a, b) => {
       const aSupplier = a.supplier as any;
@@ -517,42 +589,111 @@ export default function Catalog() {
           </div>
         </div>
 
-        {/* Categories Horizontal Scroll */}
-        <div className="flex gap-3 overflow-x-auto pt-6 no-scrollbar">
-          <button 
-            onClick={() => {
-              setSelectedCategory(null);
-              setSearchTerm('');
-            }}
-            className={cn(
-              "flex-shrink-0 px-6 py-3 rounded-2xl font-bold transition-all border flex items-center gap-2",
-              !selectedCategory && !searchTerm
-                ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
-                : "bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10"
-            )}
-          >
-            <LayoutGrid size={18} />
-            Todos
-          </button>
-          {TAXONOMY.map((cat) => (
+        {/* Categories Hierarchical Navigation */}
+        <div className="space-y-4 pt-6">
+          {/* Level 1: Main Categories */}
+          <div className="flex gap-3 overflow-x-auto no-scrollbar">
             <button 
-              key={cat.name}
               onClick={() => {
-                const dbCat = categories.find(c => c.name === cat.name);
-                if (dbCat) setSelectedCategory(dbCat.id);
+                setSelectedCategory(null);
+                setSelectedSubcategory(null);
+                setSelectedSubtype(null);
                 setSearchTerm('');
               }}
               className={cn(
                 "flex-shrink-0 px-6 py-3 rounded-2xl font-bold transition-all border flex items-center gap-2",
-                categories.find(c => c.id === selectedCategory)?.name === cat.name
-                  ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
+                !selectedCategory && !searchTerm
+                  ? "bg-orange-600 border-orange-400 text-white shadow-[0_0_20px_rgba(234,88,12,0.3)] ring-2 ring-orange-600/20 scale-105" 
                   : "bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10"
               )}
             >
-              <span className="text-xl">{cat.icon}</span>
-              {cat.name}
+              <LayoutGrid size={18} />
+              Todos
             </button>
-          ))}
+            {TAXONOMY.map((cat) => (
+              <button 
+                key={cat.name}
+                onClick={() => {
+                  setSelectedCategory(cat.name);
+                  setSelectedSubcategory(null);
+                  setSelectedSubtype(null);
+                  setSearchTerm('');
+                }}
+                className={cn(
+                  "flex-shrink-0 px-6 py-3 rounded-2xl font-bold transition-all border flex items-center gap-2",
+                  selectedCategory === cat.name
+                    ? "bg-orange-600 border-orange-400 text-white shadow-[0_0_20px_rgba(234,88,12,0.3)] ring-2 ring-orange-600/20 scale-105" 
+                    : "bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10"
+                )}
+              >
+                <span className="text-xl">{cat.icon}</span>
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Level 2: Subcategories */}
+          <AnimatePresence mode="wait">
+            {selectedCategory && (
+              <motion.div 
+                key={selectedCategory}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+                className="flex gap-2 overflow-x-auto no-scrollbar py-1"
+              >
+                {TAXONOMY.find(c => c.name === selectedCategory)?.subcategories.map(sub => (
+                  <button
+                    key={sub.name}
+                    onClick={() => {
+                      setSelectedSubcategory(sub.name);
+                      setSelectedSubtype(null);
+                    }}
+                    className={cn(
+                      "flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                      selectedSubcategory === sub.name
+                        ? "bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.2)] scale-105"
+                        : "bg-white/5 border-white/10 text-zinc-400 hover:border-white/20"
+                    )}
+                  >
+                    {sub.name}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Level 3: Subtypes / Brands */}
+          <AnimatePresence mode="wait">
+            {selectedSubcategory && TAXONOMY.find(c => c.name === selectedCategory)?.subcategories.find(s => s.name === selectedSubcategory)?.subtypes && (
+              <motion.div 
+                key={`${selectedCategory}-${selectedSubcategory}`}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+                className="flex gap-2 overflow-x-auto no-scrollbar py-1"
+              >
+                {TAXONOMY.find(c => c.name === selectedCategory)
+                  ?.subcategories.find(s => s.name === selectedSubcategory)
+                  ?.subtypes?.map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedSubtype(type)}
+                      className={cn(
+                        "flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-black transition-all border",
+                        selectedSubtype === type
+                          ? "bg-orange-500 border-orange-400 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)] scale-105"
+                          : "bg-white/5 border-white/10 text-zinc-500 hover:border-white/20"
+                      )}
+                    >
+                      {type}
+                    </button>
+                  ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -562,13 +703,29 @@ export default function Catalog() {
           <div className="flex items-center gap-2 text-sm text-zinc-400">
             <Filter size={16} />
             <span>Mostrando resultados para: </span>
-            <span className="text-white font-bold">
-              {searchTerm || categories.find(c => c.id === selectedCategory)?.name}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-white font-bold">
+                {searchTerm || selectedCategory}
+              </span>
+              {selectedSubcategory && (
+                <>
+                  <ChevronRight size={14} className="text-zinc-600" />
+                  <span className="text-white font-bold">{selectedSubcategory}</span>
+                </>
+              )}
+              {selectedSubtype && (
+                <>
+                  <ChevronRight size={14} className="text-zinc-600" />
+                  <span className="text-white font-bold">{selectedSubtype}</span>
+                </>
+              )}
+            </div>
           </div>
           <button 
             onClick={() => {
               setSelectedCategory(null);
+              setSelectedSubcategory(null);
+              setSelectedSubtype(null);
               setSearchTerm('');
             }}
             className="text-xs font-bold text-orange-500 hover:underline"
@@ -587,6 +744,7 @@ export default function Catalog() {
               { id: 'freeShipping', label: 'Frete grátis', icon: <Truck size={14} /> },
               { id: 'nightService', label: 'Atende à noite', icon: <Moon size={14} /> },
               { id: 'is24h', label: '24h', icon: <Clock size={14} /> },
+              { id: 'favorites', label: 'Favoritos', icon: <Heart size={14} /> },
             ].map((filter) => (
               <button
                 key={filter.id}
@@ -612,9 +770,12 @@ export default function Catalog() {
                   available: false,
                   freeShipping: false,
                   nightService: false,
-                  is24h: false
+                  is24h: false,
+                  favorites: false
                 });
                 setSelectedCategory(null);
+                setSelectedSubcategory(null);
+                setSelectedSubtype(null);
                 setSearchTerm('');
               }}
               className="text-[10px] font-bold text-orange-500 uppercase tracking-widest hover:underline whitespace-nowrap"
@@ -625,39 +786,68 @@ export default function Catalog() {
         </div>
 
       {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {loading ? (
-          Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="bg-[#0A0A0A] border border-white/10 rounded-3xl p-4 animate-pulse">
-              <div className="aspect-square bg-zinc-800 rounded-2xl mb-4" />
-              <div className="h-4 bg-zinc-800 rounded w-3/4 mb-2" />
-              <div className="h-4 bg-zinc-800 rounded w-1/2 mb-4" />
-              <div className="h-8 bg-zinc-800 rounded" />
-            </div>
-          ))
-        ) : filteredProducts.length === 0 ? (
-          <div className="col-span-full py-20 text-center">
-            <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Package size={32} className="text-zinc-700" />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Nenhum produto encontrado</h3>
-            <p className="text-zinc-500">Tente ajustar sua busca ou filtro.</p>
-          </div>
-        ) : filteredProducts.map((product) => (
-          <motion.div 
-            key={product.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={cn(
-              "group bg-[#0A0A0A] border rounded-3xl p-4 transition-all relative",
-              getCompanyPlan(product.supplier as any) === 'premium'
-                ? "border-orange-500/50 shadow-[0_0_25px_rgba(249,115,22,0.15)]"
-                : getCompanyPlan(product.supplier as any) === 'featured'
-                ? "border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.1)]" 
-                : "border-white/10 hover:border-orange-600/30"
-            )}
-          >
-            {getCompanyPlan(product.supplier as any) !== 'free' && (
+      <motion.div 
+        layout
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+      >
+        <AnimatePresence mode="popLayout">
+          {loading ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <ProductSkeleton key={i} />
+            ))
+          ) : filteredProducts.length === 0 ? (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="col-span-full py-20 text-center"
+            >
+              <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Package size={32} className="text-zinc-700" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Nenhum produto encontrado</h3>
+              <p className="text-zinc-500">Tente ajustar sua busca ou filtro.</p>
+            </motion.div>
+          ) : filteredProducts.map((product) => {
+            const cartItem = cart.find(item => item.product.id === product.id);
+            const nextDiscount = getNextDiscount(product, cartItem?.quantity || 0);
+            const maxDiscount = product.volume_discounts && product.volume_discounts.length > 0 
+              ? Math.max(...product.volume_discounts.map(d => d.discount_percentage))
+              : 0;
+            const shipping = getEstimatedShipping(product.supplier as any);
+
+            return (
+              <motion.div 
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                key={product.id}
+                whileHover={{ y: -4 }}
+                whileTap={{ scale: 0.98 }}
+                className={cn(
+                  "group bg-[#0A0A0A] border rounded-3xl p-4 transition-all relative flex flex-col h-full",
+                  getCompanyPlan(product.supplier as any) === 'premium'
+                    ? "border-orange-500/50 shadow-[0_0_25px_rgba(249,115,22,0.15)]"
+                    : getCompanyPlan(product.supplier as any) === 'featured'
+                    ? "border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.1)]" 
+                    : "border-white/10 hover:border-orange-600/30"
+                )}
+              >
+              {maxDiscount > 0 && (
+                <div className="absolute top-3 right-3 z-20">
+                  <motion.div 
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="bg-emerald-500 text-black text-[10px] font-black px-2 py-1 rounded-lg shadow-lg flex items-center gap-1"
+                  >
+                    <Zap size={10} fill="currentColor" />
+                    OFERTA -{maxDiscount}%
+                  </motion.div>
+                </div>
+              )}
+
+              {getCompanyPlan(product.supplier as any) !== 'free' && (
               <div className={cn(
                 "absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg z-10 flex items-center gap-1",
                 PLAN_CONFIG[getCompanyPlan(product.supplier as any)].bg
@@ -685,9 +875,24 @@ export default function Catalog() {
               <div className="absolute top-3 left-3 px-2 py-1 bg-black/60 backdrop-blur-md rounded-lg text-[10px] font-bold uppercase tracking-wider text-zinc-300">
                 {product.category?.name}
               </div>
+              
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(product.id);
+                }}
+                className={cn(
+                  "absolute top-3 right-3 z-30 p-2 rounded-xl backdrop-blur-md transition-all",
+                  favorites.includes(product.id)
+                    ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
+                    : "bg-black/40 text-white hover:bg-black/60"
+                )}
+              >
+                <Heart size={16} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
+              </button>
             </div>
 
-            <div className="space-y-1 mb-4">
+            <div className="flex-1 space-y-1 mb-4">
               <h3 className="font-bold text-lg leading-tight truncate">{product.name}</h3>
               <div className="flex flex-col gap-2 mb-1">
                 <div className="flex items-center justify-between gap-2">
@@ -698,6 +903,17 @@ export default function Catalog() {
                       <span>Frete Grátis</span>
                     </div>
                   )}
+                </div>
+
+                <div className="flex items-center gap-3 text-[10px] text-zinc-500">
+                  <div className="flex items-center gap-1">
+                    <Clock size={10} />
+                    <span>{shipping.estimatedTime}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <DollarSign size={10} />
+                    <span>Frete: {shipping.minFee === 0 ? 'Grátis' : formatCurrency(shipping.minFee)}</span>
+                  </div>
                 </div>
                 
                 <div className="flex flex-wrap gap-1">
@@ -731,7 +947,23 @@ export default function Catalog() {
               </div>
               <div className="flex items-center justify-between pt-2">
                 <div className="flex flex-col">
-                  <span className="text-xl font-black text-white">{formatCurrency(product.price)}</span>
+                  {maxDiscount > 0 ? (
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-zinc-500 line-through decoration-zinc-600">
+                        {formatCurrency(product.price)}
+                      </span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-white">
+                          {formatCurrency(product.price * (1 - maxDiscount / 100))}
+                        </span>
+                        <span className="text-[9px] text-emerald-500 font-bold uppercase">
+                          A partir de
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xl font-black text-white">{formatCurrency(product.price)}</span>
+                  )}
                   {product.supplier?.free_shipping_enabled ? (
                     <span className="text-[9px] text-emerald-500 font-bold uppercase">
                       Frete Grátis {product.supplier.free_shipping_min_value ? `+ ${formatCurrency(product.supplier.free_shipping_min_value)}` : ''}
@@ -773,8 +1005,10 @@ export default function Catalog() {
               )}
             </button>
           </motion.div>
-        ))}
-      </div>
+            );
+          })}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Cart Drawer */}
       <AnimatePresence>
@@ -788,17 +1022,31 @@ export default function Catalog() {
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100]"
             />
             <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-[#0A0A0A] border-l border-white/10 z-[101] flex flex-col"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              drag="y"
+              dragConstraints={{ top: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                  setIsCartOpen(false);
+                }
+              }}
+              className="fixed bottom-0 left-0 right-0 w-full max-w-2xl mx-auto bg-[#0A0A0A] border-t border-white/10 z-[101] flex flex-col rounded-t-[32px] max-h-[92vh] shadow-2xl overflow-hidden"
             >
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              {/* Drag Handle */}
+              <div className="pt-3 pb-1 flex justify-center">
+                <div className="w-12 h-1.5 bg-white/10 rounded-full" />
+              </div>
+
+              <div className="p-6 pt-2 border-b border-white/10 flex items-center justify-between">
                 <h2 className="text-2xl font-bold flex items-center gap-3">
                   <ShoppingCart size={24} className="text-orange-500" />
                   Seu Carrinho
                 </h2>
-                <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-white/5 rounded-full">
+                <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
                   <X size={24} />
                 </button>
               </div>
@@ -836,9 +1084,9 @@ export default function Catalog() {
                           )}
                         </div>
 
-                        {/* Volume Discount Indicator */}
+                        {/* Volume Discount Indicator & Progress Bar */}
                         {item.product.volume_discounts && item.product.volume_discounts.length > 0 && (
-                          <div className="mb-3">
+                          <div className="mb-3 space-y-2">
                             {(() => {
                               const sortedDiscounts = [...item.product.volume_discounts].sort((a, b) => b.min_quantity - a.min_quantity);
                               const currentDiscount = sortedDiscounts.find(d => item.quantity >= d.min_quantity);
@@ -853,9 +1101,22 @@ export default function Catalog() {
                                     </div>
                                   )}
                                   {nextDiscount && (
-                                    <div className="text-[10px] font-bold text-orange-500/70 flex items-center gap-1">
-                                      <Info size={10} />
-                                      + {nextDiscount.min_quantity - item.quantity} un para {nextDiscount.discount_percentage}% desc.
+                                    <div className="space-y-1.5">
+                                      <div className="flex justify-between text-[9px] font-bold">
+                                        <span className="text-zinc-500 uppercase tracking-widest">Próximo Nível</span>
+                                        <span className="text-orange-500">-{nextDiscount.discount_percentage}%</span>
+                                      </div>
+                                      <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                                        <motion.div 
+                                          initial={{ width: 0 }}
+                                          animate={{ width: `${(item.quantity / nextDiscount.min_quantity) * 100}%` }}
+                                          className="h-full bg-orange-600 rounded-full"
+                                        />
+                                      </div>
+                                      <div className="text-[9px] font-bold text-orange-500/70 flex items-center gap-1">
+                                        <Info size={10} />
+                                        + {nextDiscount.min_quantity - item.quantity} un para {nextDiscount.discount_percentage}% desc.
+                                      </div>
                                     </div>
                                   )}
                                 </>
@@ -918,8 +1179,14 @@ export default function Catalog() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-zinc-400 text-sm">
                       <span>Subtotal</span>
-                      <span>{formatCurrency(cartTotal)}</span>
+                      <span>{formatCurrency(cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0))}</span>
                     </div>
+                    {totalSavings > 0 && (
+                      <div className="flex items-center justify-between text-emerald-500 text-sm font-bold">
+                        <span>Descontos Aplicados</span>
+                        <span>-{formatCurrency(totalSavings)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-zinc-400 text-sm">
                       <div className="flex items-center gap-2">
                         <span>Frete</span>
@@ -946,7 +1213,7 @@ export default function Catalog() {
 
                   <div className="flex items-center justify-between text-xl font-bold pt-2 border-t border-white/5">
                     <span>Total</span>
-                    <span className="text-orange-500">
+                    <span className="text-white">
                       {formatCurrency(shippingDetails ? shippingDetails.total : cartTotal)}
                     </span>
                   </div>
@@ -1015,17 +1282,22 @@ export default function Catalog() {
                   <button 
                     disabled={isCheckingOut || calculatingShipping}
                     onClick={handleCheckout}
-                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-between px-6"
                   >
                     {isCheckingOut ? (
-                      <>
+                      <div className="flex items-center gap-2 mx-auto">
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Processando...
-                      </>
+                        <span>Processando...</span>
+                      </div>
                     ) : (
                       <>
-                        <CheckCircle2 size={20} />
-                        Finalizar Pedido ({paymentMethod === 'pix' ? 'Pix' : paymentMethod === 'card' ? 'Cartão' : 'Dinheiro'})
+                        <span className="text-lg">Finalizar pedido</span>
+                        <div className="flex items-center gap-3">
+                          <span className="w-px h-5 bg-white/20" />
+                          <span className="text-lg font-black tracking-tight">
+                            {formatCurrency(shippingDetails ? shippingDetails.total : cartTotal)}
+                          </span>
+                        </div>
                       </>
                     )}
                   </button>
@@ -1210,17 +1482,41 @@ export default function Catalog() {
         {cart.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
+            animate={{ 
+              opacity: 1, 
+              y: 0,
+              scale: lastAddedId ? [1, 1.05, 1] : 1
+            }}
             exit={{ opacity: 0, y: 100 }}
+            transition={{ 
+              scale: { duration: 0.3, ease: "easeOut" },
+              y: { type: "spring", damping: 20, stiffness: 100 }
+            }}
             className="fixed bottom-4 left-4 right-4 z-50 pb-[env(safe-area-inset-bottom)]"
           >
-            <button
+            <motion.button
               onClick={() => setIsCartOpen(true)}
+              animate={lastAddedId ? {
+                boxShadow: ["0 8px 30px rgb(234,88,12,0.3)", "0 8px 40px rgb(234,88,12,0.6)", "0 8px 30px rgb(234,88,12,0.3)"]
+              } : {}}
               className="w-full bg-orange-600 hover:bg-orange-700 text-white px-6 py-4 rounded-2xl font-bold flex items-center justify-between transition-all shadow-[0_8px_30px_rgb(234,88,12,0.3)] active:scale-[0.98]"
             >
               <div className="flex items-center gap-3">
-                <ShoppingCart size={24} />
-                <span className="text-lg">Carrinho ({cartCount})</span>
+                <div className="relative">
+                  <ShoppingCart size={24} />
+                  <AnimatePresence mode="popLayout">
+                    <motion.span 
+                      key={cartCount}
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 1.5, opacity: 0 }}
+                      className="absolute -top-2 -right-2 bg-white text-orange-600 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-lg"
+                    >
+                      {cartCount}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
+                <span className="text-lg">Carrinho</span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="h-6 w-px bg-white/20" />
@@ -1229,7 +1525,7 @@ export default function Catalog() {
                 </span>
                 <ChevronRight size={20} />
               </div>
-            </button>
+            </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
