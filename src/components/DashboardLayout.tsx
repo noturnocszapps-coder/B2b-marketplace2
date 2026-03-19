@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Store
 } from 'lucide-react';
-import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SidebarItem {
@@ -26,7 +25,12 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
+  { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'supplier', 'retailer', 'driver'] },
+  { title: 'Produtos', path: '/products', icon: Package, roles: ['admin', 'supplier'] },
+  { title: 'Catálogo', path: '/catalog', icon: Store, roles: ['admin', 'retailer'] },
   { title: 'Pedidos', path: '/orders', icon: ShoppingCart, roles: ['admin', 'supplier', 'retailer'] },
+  { title: 'Entregas', path: '/deliveries', icon: Truck, roles: ['admin', 'supplier', 'driver'] },
+  { title: 'Usuários', path: '/users', icon: Users, roles: ['admin'] },
   { title: 'Configurações', path: '/settings', icon: Settings, roles: ['admin', 'supplier', 'retailer', 'driver'] },
 ];
 
@@ -34,6 +38,18 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Lock scroll when mobile menu is open
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMobileMenuOpen]);
 
   const filteredItems = sidebarItems.filter(item => 
     profile && item.roles.includes(profile.role)
@@ -103,7 +119,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#0A0A0A] border-b border-white/10 flex items-center justify-between px-6 z-50">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#0A0A0A] border-b border-white/10 flex items-center justify-between px-6 z-[110]">
         <div className="flex items-center gap-2">
           <Package className="text-orange-500" size={24} />
           <span className="font-bold tracking-tight">B2B MARKET</span>
@@ -120,7 +136,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
             initial={{ opacity: 0, x: -100 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -100 }}
-            className="md:hidden fixed inset-0 bg-[#0A0A0A] z-40 pt-20 px-6"
+            className="md:hidden fixed inset-0 bg-[#0A0A0A] z-[100] pt-24 px-6 overflow-y-auto"
           >
             <nav className="space-y-2">
               {displayItems.map((item) => (

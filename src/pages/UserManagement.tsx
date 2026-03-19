@@ -58,17 +58,15 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchProfiles();
-  }, [filter]);
+  }, []);
 
   async function fetchProfiles() {
     setLoading(true);
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('*, companies(*)')
+        .select('*, companies(*), delivery_drivers(*)')
         .order('created_at', { ascending: false });
-      
-      const { data, error } = await query;
       if (error) throw error;
       setProfiles(data || []);
     } catch (error: any) {
@@ -187,10 +185,12 @@ export default function UserManagement() {
 
   const filteredProfiles = profiles.filter(profile => {
     const matchesSearch = 
-      profile.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      profile.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      (profile.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (profile.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     
-    const matchesFilter = filter === 'all' || profile.status === filter;
+    // Ensure status is treated consistently
+    const status = (profile.status || 'pending').toLowerCase();
+    const matchesFilter = filter === 'all' || status === filter;
     
     return matchesSearch && matchesFilter;
   });
@@ -285,18 +285,18 @@ export default function UserManagement() {
               <div className="flex items-center justify-between lg:justify-end gap-6 border-t lg:border-t-0 border-white/5 pt-4 lg:pt-0">
                 <div className={cn(
                   "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2",
-                  user.status === 'active' ? "bg-emerald-500/10 text-emerald-500" :
-                  user.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
+                  (user.status || 'pending') === 'active' ? "bg-emerald-500/10 text-emerald-500" :
+                  (user.status || 'pending') === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
                   "bg-red-500/10 text-red-500"
                 )}>
-                  {user.status === 'active' ? <CheckCircle2 size={12} /> : 
-                   user.status === 'pending' ? <Clock size={12} /> : 
+                  {(user.status || 'pending') === 'active' ? <CheckCircle2 size={12} /> : 
+                   (user.status || 'pending') === 'pending' ? <Clock size={12} /> : 
                    <XCircle size={12} />}
-                  {user.status}
+                  {user.status || 'pending'}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {user.status === 'pending' && (
+                  {(user.status || 'pending') === 'pending' && (
                     <>
                       <button 
                         disabled={updatingId === user.id}
@@ -317,7 +317,7 @@ export default function UserManagement() {
                     </>
                   )}
 
-                  {user.status === 'active' && (
+                  {(user.status || 'pending') === 'active' && (
                     <button 
                       disabled={updatingId === user.id}
                       onClick={() => updateStatus(user.id, 'blocked')}
@@ -328,7 +328,7 @@ export default function UserManagement() {
                     </button>
                   )}
 
-                  {user.role === 'supplier' && user.status === 'active' && (
+                  {user.role === 'supplier' && (user.status || 'pending') === 'active' && (
                     <button 
                       onClick={() => {
                         const company = (user as any).companies?.[0];
@@ -350,7 +350,7 @@ export default function UserManagement() {
                     </button>
                   )}
 
-                  {user.status === 'blocked' && (
+                  {(user.status || 'pending') === 'blocked' && (
                     <button 
                       disabled={updatingId === user.id}
                       onClick={() => updateStatus(user.id, 'active')}
