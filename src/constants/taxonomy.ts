@@ -3,7 +3,7 @@ export interface TaxonomyCategory {
   icon: string;
   subcategories: {
     name: string;
-    subtypes?: string[];
+    subtypes?: (string | { name: string; children: string[] })[];
   }[];
 }
 
@@ -17,7 +17,14 @@ export const TAXONOMY: TaxonomyCategory[] = [
       { name: 'Essência', subtypes: ['Zgy', 'Nay', 'Zomo', 'Adalya', 'Onix', 'Magic'] },
       { 
         name: 'Acessórios', 
-        subtypes: ['Rosh', 'Mangueiras', 'Piteiras', 'Acendedor / Panelinha 110v', 'Acendedor / Panelinha 220v', 'Borrachas', 'Pegador'] 
+        subtypes: [
+          'Rosh', 
+          'Mangueiras', 
+          'Piteiras', 
+          { name: 'Acendedor / Panelinha', children: ['110v', '220v'] },
+          'Borrachas', 
+          'Pegador'
+        ] 
       }
     ]
   },

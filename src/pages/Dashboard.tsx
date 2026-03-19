@@ -28,6 +28,7 @@ import {
 } from 'recharts';
 import { formatCurrency, cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { UserRole } from '../config/navigation';
 
 const mockChartData = [
   { name: 'Seg', sales: 4000, orders: 24 },
@@ -57,7 +58,7 @@ export default function Dashboard() {
     setLoading(true);
     try {
       // Fetch stats based on role
-      if (profile?.role === 'admin') {
+      if (profile?.role === UserRole.ADMIN) {
         const [usersCount, ordersCount, productsCount] = await Promise.all([
           supabase.from('profiles').select('*', { count: 'exact', head: true }),
           supabase.from('orders').select('*', { count: 'exact', head: true }),
@@ -70,7 +71,7 @@ export default function Dashboard() {
           totalProducts: productsCount.count || 0,
           revenue: 12450.80 // Mock for now
         });
-      } else if (profile?.role === 'supplier') {
+      } else if (profile?.role === UserRole.SUPPLIER) {
         const { data: company } = await supabase
           .from('companies')
           .select('id')
@@ -78,18 +79,22 @@ export default function Dashboard() {
           .single();
 
         if (company) {
-          const [productsCount, ordersCount] = await Promise.all([
+          const [productsCount, ordersCount, lowStockCount, ongoingDeliveriesCount] = await Promise.all([
             supabase.from('products').select('*', { count: 'exact', head: true }).eq('supplier_id', company.id),
             supabase.from('order_items').select('order_id', { count: 'exact', head: true }).eq('product:products(supplier_id)', company.id),
+            supabase.from('products').select('*', { count: 'exact', head: true }).eq('supplier_id', company.id).lte('stock', 10),
+            supabase.from('deliveries').select('*', { count: 'exact', head: true }).eq('order:orders(order_items:order_items(product:products(supplier_id)))', company.id).in('status', ['pendente', 'saiu para entrega'])
           ]);
           
           setStats({
             myProducts: productsCount.count || 0,
             activeOrders: ordersCount.count || 0,
+            lowStock: lowStockCount.count || 0,
+            ongoingDeliveries: ongoingDeliveriesCount.count || 0,
             revenue: 8540.00
           });
         }
-      } else if (profile?.role === 'retailer') {
+      } else if (profile?.role === UserRole.RETAILER) {
         const { data: company } = await supabase
           .from('companies')
           .select('id')
@@ -107,7 +112,7 @@ export default function Dashboard() {
             totalSpent: 3240.50
           });
         }
-      } else if (profile?.role === 'driver') {
+      } else if (profile?.role === UserRole.DRIVER) {
         const { data: driver } = await supabase
           .from('delivery_drivers')
           .select('id')
@@ -137,7 +142,7 @@ export default function Dashboard() {
       setRecentOrders(orders || []);
 
       // Fetch repurchase suggestions for retailers
-      if (profile?.role === 'retailer') {
+      if (profile?.role === UserRole.RETAILER) {
         const { data: company } = await supabase
           .from('companies')
           .select('id')
@@ -219,7 +224,7 @@ export default function Dashboard() {
 
   const renderStats = () => {
     switch (profile?.role) {
-      case 'admin':
+      case UserRole.ADMIN:
         return (
           <>
             <StatCard title="Vendas Totais" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={12.5} color="bg-orange-600" />
@@ -228,7 +233,7 @@ export default function Dashboard() {
             <StatCard title="Produtos Cadastrados" value={stats.totalProducts || 0} icon={Package} color="bg-zinc-600" onClick={() => navigate('/products')} />
           </>
         );
-      case 'supplier':
+      case UserRole.SUPPLIER:
         return (
           <>
             <StatCard title="Faturamento Mensal" value={formatCurrency(stats.revenue || 0)} icon={DollarSign} trend={15.2} color="bg-orange-600" />
@@ -238,16 +243,15 @@ export default function Dashboard() {
             <StatCard title="Estoque Baixo" value={stats.lowStock || 0} icon={AlertCircle} color="bg-red-600" onClick={() => navigate('/products')} />
           </>
         );
-      case 'retailer':
+      case UserRole.RETAILER:
         return (
           <>
             <StatCard title="Total Comprado (mês)" value={formatCurrency(stats.totalSpent || 0)} icon={DollarSign} color="bg-orange-600" />
             <StatCard title="Quantidade de Pedidos" value={stats.myOrders || 0} icon={ShoppingCart} color="bg-blue-600" onClick={() => navigate('/orders')} />
-            <StatCard title="Entregas Pendentes" value={stats.pendingDeliveries || 0} icon={Truck} color="bg-purple-600" onClick={() => navigate('/deliveries')} />
             <StatCard title="Produtos Favoritos" value={stats.favorites || 0} icon={Package} color="bg-zinc-600" onClick={() => navigate('/catalog')} />
           </>
         );
-      case 'driver':
+      case UserRole.DRIVER:
         return (
           <>
             <StatCard title="Minhas Entregas" value={stats.myDeliveries || 0} icon={Truck} color="bg-orange-600" onClick={() => navigate('/deliveries')} />
@@ -395,7 +399,8 @@ export default function Dashboard() {
                     <p className="text-sm font-bold">{formatCurrency(order.total_amount)}</p>
                     <span className={cn(
                       "text-[10px] uppercase tracking-wider font-bold",
-                      order.status === 'pendente' ? "text-orange-500" : "text-green-500"
+                      order.status === 'pendente' || order.status === 'aguardando pagamento' ? "text-orange-500" : 
+                      order.status === 'cancelado' ? "text-red-500" : "text-green-500"
                     )}>
                       {order.status}
                     </span>

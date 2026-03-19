@@ -54,7 +54,12 @@ export default function Orders() {
     try {
       let query = supabase
         .from('orders')
-        .select('*, retailer:companies(name, responsible_name, whatsapp), items:order_items(*, product:products(name, image_url, supplier:companies(name, pix_key, pix_recipient_name, address, whatsapp)))')
+        .select(`
+          *, 
+          retailer:companies(name, responsible_name, whatsapp), 
+          items:order_items(*, product:products(name, image_url, supplier:companies(name, pix_key, pix_recipient_name, address, whatsapp))),
+          delivery:deliveries(*)
+        `)
         .order('created_at', { ascending: false });
 
       if (profile?.role === 'retailer') {
@@ -91,12 +96,27 @@ export default function Orders() {
     
     setUpdatingId(orderId);
     try {
-      const { error } = await supabase
+      // 1. Update order status
+      const { error: orderError } = await supabase
         .from('orders')
         .update({ status: newStatus })
         .eq('id', orderId);
 
-      if (error) throw error;
+      if (orderError) throw orderError;
+
+      // 2. Sync delivery status if applicable
+      let deliveryStatus = '';
+      if (newStatus === 'em entrega') deliveryStatus = 'saiu para entrega';
+      if (newStatus === 'entregue') deliveryStatus = 'entregue';
+      if (newStatus === 'cancelado') deliveryStatus = 'falhou';
+
+      if (deliveryStatus) {
+        await supabase
+          .from('deliveries')
+          .update({ status: deliveryStatus })
+          .eq('order_id', orderId);
+      }
+
       toast.success('Status do pedido atualizado!');
       fetchOrders();
     } catch (error: any) {
@@ -413,33 +433,63 @@ export default function Orders() {
                                 <span className="text-zinc-500">Lojista Responsável</span>
                                 <span className="font-bold">{order.retailer?.responsible_name}</span>
                               </div>
+                              {(order as any).delivery && (
+                                <>
+                                  <div className="flex justify-between text-sm pt-2 border-t border-white/5">
+                                    <span className="text-zinc-500">Veículo</span>
+                                    <span className="font-bold uppercase">{(order as any).delivery[0]?.vehicle_type || 'MOTO'}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-zinc-500">Distância</span>
+                                    <span className="font-bold">{(order as any).delivery[0]?.distance_km?.toFixed(1)} km</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-zinc-500">Taxa de Entrega</span>
+                                    <span className="font-bold">{formatCurrency((order as any).delivery[0]?.delivery_fee || 0)}</span>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
 
                           <div className="space-y-4">
                             <h4 className="text-sm font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
                               <AlertCircle size={16} />
-                              Pagamento (Pix)
+                              Pagamento ({order.payment_method === 'pix' ? 'Pix' : 
+                                         order.payment_method === 'mercado_pago' ? 'Mercado Pago' :
+                                         order.payment_method === 'card' ? 'Cartão' : 'Dinheiro'})
                             </h4>
                             <div className="bg-orange-600/10 border border-orange-600/20 p-4 rounded-xl">
-                              <p className="text-xs text-orange-500 font-bold mb-2 uppercase tracking-wider">Pagamento via Pix</p>
+                              <p className="text-xs text-orange-500 font-bold mb-2 uppercase tracking-wider">
+                                {order.payment_method === 'pix' ? 'Pagamento via Pix' : 
+                                 order.payment_method === 'mercado_pago' ? 'Pagamento via Mercado Pago' :
+                                 order.payment_method === 'card' ? 'Pagamento via Cartão' : 'Pagamento em Dinheiro'}
+                              </p>
                               <div className="flex items-center justify-between gap-4">
                                 <div className="flex-1">
-                                  <code className="block bg-black/40 p-3 rounded-lg text-xs font-mono break-all text-zinc-300 border border-white/5 mb-2">
-                                    {order.pix_code}
-                                  </code>
-                                  <button 
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(order.pix_code);
-                                      toast.success('Código Pix copiado!');
-                                    }}
-                                    className="text-xs font-bold text-orange-500 hover:underline flex items-center gap-1"
-                                  >
-                                    <Copy size={12} />
-                                    Copiar Código
-                                  </button>
+                                  {order.payment_method === 'pix' ? (
+                                    <>
+                                      <code className="block bg-black/40 p-3 rounded-lg text-xs font-mono break-all text-zinc-300 border border-white/5 mb-2">
+                                        {order.pix_code}
+                                      </code>
+                                      <button 
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(order.pix_code);
+                                          toast.success('Código Pix copiado!');
+                                        }}
+                                        className="text-xs font-bold text-orange-500 hover:underline flex items-center gap-1"
+                                      >
+                                        <Copy size={12} />
+                                        Copiar Código
+                                      </button>
+                                    </>
+                                  ) : order.payment_method === 'mercado_pago' ? (
+                                    <p className="text-sm text-zinc-400">Pagamento processado via Mercado Pago.</p>
+                                  ) : (
+                                    <p className="text-sm text-zinc-400">Pagamento a ser realizado na entrega.</p>
+                                  )}
                                 </div>
-                                {order.status === 'aguardando pagamento' && (
+                                {order.status === 'aguardando pagamento' && order.payment_method === 'pix' && (
                                   <button 
                                     onClick={() => {
                                       // Find supplier info from the first item
@@ -616,6 +666,10 @@ export default function Orders() {
                       <p className="font-medium">{currentOrder.supplier?.name}</p>
                     </div>
                     <div>
+                      <p className="text-zinc-500 mb-1">Recebedor</p>
+                      <p className="font-medium">{currentOrder.supplier?.pix_recipient_name || currentOrder.supplier?.name}</p>
+                    </div>
+                    <div className="col-span-2">
                       <p className="text-zinc-500 mb-1">Chave Pix</p>
                       <p className="font-medium truncate">{currentOrder.supplier?.pix_key}</p>
                     </div>

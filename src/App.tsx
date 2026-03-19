@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardLayout } from './components/DashboardLayout';
 import { Toaster } from 'sonner';
+import { UserRole } from './config/navigation';
 
 // Pages
 import Login from './pages/Login';
@@ -49,7 +50,7 @@ export default function App() {
           } />
 
           <Route path="/products" element={
-            <ProtectedRoute allowedRoles={['admin', 'supplier']}>
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.SUPPLIER]}>
               <DashboardLayout>
                 <Products />
               </DashboardLayout>
@@ -57,7 +58,7 @@ export default function App() {
           } />
 
           <Route path="/catalog" element={
-            <ProtectedRoute allowedRoles={['admin', 'retailer']}>
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.RETAILER]}>
               <DashboardLayout>
                 <Catalog />
               </DashboardLayout>
@@ -65,7 +66,7 @@ export default function App() {
           } />
 
           <Route path="/orders" element={
-            <ProtectedRoute allowedRoles={['admin', 'supplier', 'retailer']}>
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.SUPPLIER, UserRole.RETAILER]}>
               <DashboardLayout>
                 <Orders />
               </DashboardLayout>
@@ -73,7 +74,7 @@ export default function App() {
           } />
 
           <Route path="/deliveries" element={
-            <ProtectedRoute allowedRoles={['admin', 'driver']}>
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.SUPPLIER, UserRole.DRIVER]}>
               <DashboardLayout>
                 <Deliveries />
               </DashboardLayout>
@@ -81,7 +82,7 @@ export default function App() {
           } />
 
           <Route path="/admin/users" element={
-            <ProtectedRoute allowedRoles={['admin']}>
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
               <DashboardLayout>
                 <UserManagement />
               </DashboardLayout>

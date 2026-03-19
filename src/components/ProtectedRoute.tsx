@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { UserRole } from '../lib/supabase';
+import { UserRole } from '../config/navigation';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -32,8 +32,16 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/blocked" replace />;
   }
 
-  if (allowedRoles && profile && profile.role !== 'admin' && !allowedRoles.includes(profile.role)) {
-    return <Navigate to="/unauthorized" replace />;
+  if (allowedRoles && profile && profile.role !== UserRole.ADMIN && !allowedRoles.includes(profile.role as UserRole)) {
+    if (import.meta.env.DEV) {
+      console.warn('[ProtectedRoute] Access Denied:', {
+        path: location.pathname,
+        userRole: profile.role,
+        allowedRoles
+      });
+    }
+    // Redirect to dashboard if authenticated but unauthorized for this specific route
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

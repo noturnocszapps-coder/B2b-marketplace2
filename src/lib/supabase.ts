@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { UserRole as UserRoleEnum } from '../config/navigation';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -14,6 +15,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export type UserRole = 'admin' | 'supplier' | 'retailer' | 'driver';
+export const ROLES = UserRoleEnum;
 export type UserStatus = 'pending' | 'active' | 'blocked';
 
 export interface Profile {
@@ -98,7 +100,7 @@ export interface Order {
   retailer_id: string;
   total_amount: number;
   status: string;
-  payment_method: 'pix' | 'card' | 'cash';
+  payment_method: 'pix' | 'card' | 'cash' | 'mercado_pago';
   change_for?: number;
   pix_code: string;
   created_at: string;

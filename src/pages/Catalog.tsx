@@ -26,7 +26,8 @@ import {
   ArrowUpDown,
   Heart,
   LayoutGrid,
-  Sparkles
+  Sparkles,
+  CreditCard
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,7 +47,7 @@ export default function Catalog() {
   const [loading, setLoading] = useState(true);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash' | 'mercado_pago'>('pix');
   const [changeFor, setChangeFor] = useState<string>('');
   const [currentOrder, setCurrentOrder] = useState<any>(null);
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ export default function Catalog() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
+  const [selectedVariation, setSelectedVariation] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('featured');
   const [activeFilters, setActiveFilters] = useState({
     featured: false,
@@ -297,7 +299,39 @@ export default function Catalog() {
     setIsCheckingOut(true);
 
     try {
-      // Identify the supplier from the first item in cart
+      // 1. Re-verify product status and stock
+      const productIds = cart.map(item => item.product.id);
+      const { data: currentProducts, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, stock_quantity, is_active, min_quantity, purchase_multiple')
+        .in('id', productIds);
+
+      if (productsError) throw productsError;
+
+      for (const item of cart) {
+        const current = currentProducts?.find(p => p.id === item.product.id);
+        if (!current) {
+          throw new Error(`Produto "${item.product.name}" não encontrado.`);
+        }
+        if (!current.is_active) {
+          throw new Error(`Produto "${item.product.name}" não está mais disponível.`);
+        }
+        if (current.stock_quantity < item.quantity) {
+          throw new Error(`Estoque insuficiente para "${item.product.name}". Disponível: ${current.stock_quantity}`);
+        }
+
+        // 1.1 Verify min_quantity and purchase_multiple
+        const minQty = current.min_quantity || 1;
+        const multiple = current.purchase_multiple || 1;
+        if (item.quantity < minQty) {
+          throw new Error(`Quantidade mínima para "${item.product.name}" é ${minQty}.`);
+        }
+        if ((item.quantity - minQty) % multiple !== 0) {
+          throw new Error(`Quantidade de "${item.product.name}" deve ser múltiplo de ${multiple} após o mínimo.`);
+        }
+      }
+
+      // 2. Identify the supplier from the first item in cart
       const supplierId = cart[0].product.supplier_id;
       const { data: supplierCompany, error: supplierError } = await supabase
         .from('companies')
@@ -458,7 +492,29 @@ export default function Catalog() {
                            p.supplier?.name.toLowerCase().includes(searchLower);
       const matchesCategory = !selectedCategory || p.category?.name === selectedCategory;
       const matchesSubcategory = !selectedSubcategory || p.subcategory === selectedSubcategory;
-      const matchesSubtype = !selectedSubtype || p.subtype === selectedSubtype || p.brand === selectedSubtype;
+      
+      // Handle nested subtype/variation filtering
+      let matchesSubtype = true;
+      if (selectedSubtype) {
+        const subcategory = TAXONOMY.find(c => c.name === selectedCategory)
+          ?.subcategories.find(s => s.name === selectedSubcategory);
+        const subtypeObj = subcategory?.subtypes?.find(t => 
+          (typeof t === 'string' ? t : t.name) === selectedSubtype
+        );
+        
+        const isGroup = typeof subtypeObj === 'object';
+
+        if (selectedVariation) {
+          // Exact match for the combination
+          matchesSubtype = p.subtype === `${selectedSubtype} ${selectedVariation}` || p.brand === selectedVariation;
+        } else if (isGroup) {
+          // Match any variation of the group
+          matchesSubtype = p.subtype?.startsWith(selectedSubtype) || p.brand?.includes(selectedSubtype);
+        } else {
+          // Simple exact match
+          matchesSubtype = p.subtype === selectedSubtype || p.brand === selectedSubtype;
+        }
+      }
       
       const supplier = p.supplier as any;
       const status = getSupplierStatus(supplier);
@@ -649,6 +705,7 @@ export default function Catalog() {
                     onClick={() => {
                       setSelectedSubcategory(sub.name);
                       setSelectedSubtype(null);
+                      setSelectedVariation(null);
                     }}
                     className={cn(
                       "flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
@@ -677,22 +734,69 @@ export default function Catalog() {
               >
                 {TAXONOMY.find(c => c.name === selectedCategory)
                   ?.subcategories.find(s => s.name === selectedSubcategory)
-                  ?.subtypes?.map(type => (
-                    <button
-                      key={type}
-                      onClick={() => setSelectedSubtype(type)}
-                      className={cn(
-                        "flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-black transition-all border",
-                        selectedSubtype === type
-                          ? "bg-orange-500 border-orange-400 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)] scale-105"
-                          : "bg-white/5 border-white/10 text-zinc-500 hover:border-white/20"
-                      )}
-                    >
-                      {type}
-                    </button>
-                  ))}
+                  ?.subtypes?.map(type => {
+                    const typeName = typeof type === 'string' ? type : type.name;
+                    const isSelected = selectedSubtype === typeName;
+                    
+                    return (
+                      <button
+                        key={typeName}
+                        onClick={() => {
+                          setSelectedSubtype(typeName);
+                          setSelectedVariation(null);
+                        }}
+                        className={cn(
+                          "flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-black transition-all border",
+                          isSelected
+                            ? "bg-orange-500 border-orange-400 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)] scale-105"
+                            : "bg-white/5 border-white/10 text-zinc-500 hover:border-white/20"
+                        )}
+                      >
+                        {typeName}
+                      </button>
+                    );
+                  })}
               </motion.div>
             )}
+          </AnimatePresence>
+
+          {/* Level 4: Variations (if any) */}
+          <AnimatePresence mode="wait">
+            {selectedSubtype && (() => {
+              const subcategory = TAXONOMY.find(c => c.name === selectedCategory)
+                ?.subcategories.find(s => s.name === selectedSubcategory);
+              const subtype = subcategory?.subtypes?.find(t => 
+                (typeof t === 'string' ? t : t.name) === selectedSubtype
+              );
+              
+              if (typeof subtype === 'object' && subtype.children) {
+                return (
+                  <motion.div 
+                    key={`${selectedCategory}-${selectedSubcategory}-${selectedSubtype}`}
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className="flex gap-2 overflow-x-auto no-scrollbar py-1"
+                  >
+                    {subtype.children.map(variation => (
+                      <button
+                        key={variation}
+                        onClick={() => setSelectedVariation(variation)}
+                        className={cn(
+                          "flex-shrink-0 px-2 py-1 rounded-md text-[9px] font-bold transition-all border",
+                          selectedVariation === variation
+                            ? "bg-zinc-100 border-zinc-100 text-black shadow-lg scale-105"
+                            : "bg-white/5 border-white/10 text-zinc-600 hover:border-white/20"
+                        )}
+                      >
+                        {variation}
+                      </button>
+                    ))}
+                  </motion.div>
+                );
+              }
+              return null;
+            })()}
           </AnimatePresence>
         </div>
       </div>
@@ -719,6 +823,12 @@ export default function Catalog() {
                   <span className="text-white font-bold">{selectedSubtype}</span>
                 </>
               )}
+              {selectedVariation && (
+                <>
+                  <ChevronRight size={14} className="text-zinc-600" />
+                  <span className="text-white font-bold">{selectedVariation}</span>
+                </>
+              )}
             </div>
           </div>
           <button 
@@ -726,6 +836,7 @@ export default function Catalog() {
               setSelectedCategory(null);
               setSelectedSubcategory(null);
               setSelectedSubtype(null);
+              setSelectedVariation(null);
               setSearchTerm('');
             }}
             className="text-xs font-bold text-orange-500 hover:underline"
@@ -776,6 +887,7 @@ export default function Catalog() {
                 setSelectedCategory(null);
                 setSelectedSubcategory(null);
                 setSelectedSubtype(null);
+                setSelectedVariation(null);
                 setSearchTerm('');
               }}
               className="text-[10px] font-bold text-orange-500 uppercase tracking-widest hover:underline whitespace-nowrap"
@@ -1221,7 +1333,7 @@ export default function Catalog() {
                   {/* Payment Method Selection */}
                   <div className="space-y-4 pt-4 border-t border-white/5">
                     <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Forma de Pagamento</h4>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
                         onClick={() => setPaymentMethod('pix')}
                         className={cn(
@@ -1251,6 +1363,16 @@ export default function Catalog() {
                       >
                         <DollarSign size={20} />
                         <span className="text-[10px] font-bold uppercase">Dinheiro</span>
+                      </button>
+                      <button
+                        onClick={() => setPaymentMethod('mercado_pago')}
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all opacity-50 cursor-not-allowed",
+                          paymentMethod === 'mercado_pago' ? "bg-orange-600/10 border-orange-600 text-orange-500" : "bg-white/5 border-white/5 text-zinc-500"
+                        )}
+                      >
+                        <CreditCard size={20} />
+                        <span className="text-[10px] font-bold uppercase">M. Pago</span>
                       </button>
                     </div>
 
@@ -1439,15 +1561,15 @@ export default function Catalog() {
                     <Info size={16} />
                     <span>Dados do Recebedor</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <p className="text-zinc-500 mb-1">Empresa</p>
-                      <p className="font-medium">{currentOrder.supplier?.name}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                      <p className="text-zinc-500 mb-1 uppercase tracking-widest text-[10px] font-bold">Recebedor</p>
+                      <p className="font-bold text-white text-sm">{currentOrder.supplier?.pix_recipient_name || currentOrder.supplier?.name}</p>
                     </div>
                     {currentOrder.payment_method === 'pix' && (
-                      <div>
-                        <p className="text-zinc-500 mb-1">Chave Pix</p>
-                        <p className="font-medium truncate">{currentOrder.supplier?.pix_key}</p>
+                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                        <p className="text-zinc-500 mb-1 uppercase tracking-widest text-[10px] font-bold">Chave Pix</p>
+                        <p className="font-bold text-white text-sm truncate">{currentOrder.supplier?.pix_key}</p>
                       </div>
                     )}
                   </div>

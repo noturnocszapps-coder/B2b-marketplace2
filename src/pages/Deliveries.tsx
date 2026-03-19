@@ -23,7 +23,7 @@ import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function Deliveries() {
   const { profile } = useAuth();
@@ -113,12 +113,29 @@ export default function Deliveries() {
     
     setUpdatingId(deliveryId);
     try {
-      const { error } = await supabase
+      // 1. Update delivery status
+      const { data: delivery, error: deliveryError } = await supabase
         .from('deliveries')
         .update({ status: newStatus })
-        .eq('id', deliveryId);
+        .eq('id', deliveryId)
+        .select('order_id')
+        .single();
 
-      if (error) throw error;
+      if (deliveryError) throw deliveryError;
+
+      // 2. Sync order status if applicable
+      let orderStatus = '';
+      if (newStatus === 'saiu para entrega') orderStatus = 'em entrega';
+      if (newStatus === 'entregue') orderStatus = 'entregue';
+      if (newStatus === 'falhou') orderStatus = 'cancelado';
+
+      if (orderStatus && delivery.order_id) {
+        await supabase
+          .from('orders')
+          .update({ status: orderStatus })
+          .eq('id', delivery.order_id);
+      }
+
       toast.success(`Status atualizado para: ${newStatus}`);
       fetchDeliveries();
     } catch (error: any) {
@@ -429,11 +446,13 @@ export default function Deliveries() {
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-zinc-400 border border-white/5">
                           {selectedDelivery.order?.payment_method === 'pix' ? <QrCode size={20} /> : 
+                           selectedDelivery.order?.payment_method === 'mercado_pago' ? <ExternalLink size={20} /> :
                            selectedDelivery.order?.payment_method === 'card' ? <Star size={20} /> : <DollarSign size={20} />}
                         </div>
                         <div>
                           <p className="font-bold text-sm capitalize">
                             {selectedDelivery.order?.payment_method === 'pix' ? 'Pix' : 
+                             selectedDelivery.order?.payment_method === 'mercado_pago' ? 'Mercado Pago' :
                              selectedDelivery.order?.payment_method === 'card' ? 'Cartão' : 
                              selectedDelivery.order?.payment_method === 'cash' ? 'Dinheiro' : 'Não informado'}
                           </p>

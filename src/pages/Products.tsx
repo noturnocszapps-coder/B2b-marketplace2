@@ -455,6 +455,17 @@ export default function Products() {
                         const subcategoryData = taxonomyCategory?.subcategories.find(s => s.name === formData.subcategory);
                         
                         if (subcategoryData?.subtypes && subcategoryData.subtypes.length > 0) {
+                          const flattenedSubtypes: string[] = [];
+                          subcategoryData.subtypes.forEach(st => {
+                            if (typeof st === 'string') {
+                              flattenedSubtypes.push(st);
+                            } else {
+                              st.children.forEach(child => {
+                                flattenedSubtypes.push(`${st.name} ${child}`);
+                              });
+                            }
+                          });
+
                           return (
                             <div className="space-y-2">
                               <label className="text-sm font-medium text-zinc-400">Subtipo / Marca *</label>
@@ -465,7 +476,7 @@ export default function Products() {
                                 onChange={e => setFormData({...formData, subtype: e.target.value})}
                               >
                                 <option value="">Selecione o subtipo</option>
-                                {subcategoryData.subtypes.map(st => (
+                                {flattenedSubtypes.map(st => (
                                   <option key={st} value={st}>{st}</option>
                                 ))}
                               </select>
