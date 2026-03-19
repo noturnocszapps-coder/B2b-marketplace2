@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   X,
   Copy,
+  DollarSign,
   ExternalLink,
   QrCode,
   ChevronRight,
@@ -34,6 +35,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
 import { getShippingDetails, type ShippingResult } from '../lib/shipping';
 import { getSupplierStatus, STATUS_CONFIG, getCompanyPlan, PLAN_CONFIG } from '../lib/supplier';
+import { TAXONOMY } from '../constants/taxonomy';
 
 export default function Catalog() {
   const { profile } = useAuth();
@@ -42,6 +44,8 @@ export default function Catalog() {
   const [loading, setLoading] = useState(true);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash'>('pix');
+  const [changeFor, setChangeFor] = useState<string>('');
   const [currentOrder, setCurrentOrder] = useState<any>(null);
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,11 +63,22 @@ export default function Catalog() {
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
   const [shippingDetails, setShippingDetails] = useState<ShippingResult | null>(null);
   const [calculatingShipping, setCalculatingShipping] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
 
   useEffect(() => {
     fetchProducts();
     fetchCategories();
+    const history = localStorage.getItem('searchHistory');
+    if (history) setSearchHistory(JSON.parse(history));
   }, []);
+
+  const addToSearchHistory = (term: string) => {
+    if (!term.trim()) return;
+    const newHistory = [term, ...searchHistory.filter(h => h !== term)].slice(0, 5);
+    setSearchHistory(newHistory);
+    localStorage.setItem('searchHistory', JSON.stringify(newHistory));
+  };
 
   async function fetchCategories() {
     const { data } = await supabase.from('categories').select('*').order('name');
@@ -96,7 +111,8 @@ export default function Catalog() {
         action: {
           label: 'Limpar Carrinho',
           onClick: () => {
-            setCart([{ product, quantity: 1 }]);
+            const initialQty = product.min_quantity || 1;
+            setCart([{ product, quantity: initialQty }]);
             setAddedProductId(product.id);
             setTimeout(() => setAddedProductId(null), 1000);
             toast.success(`${product.name} adicionado ao carrinho`);
@@ -112,19 +128,22 @@ export default function Catalog() {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stock_quantity) {
+        const step = product.purchase_multiple || 1;
+        const newQty = existing.quantity + step;
+        if (newQty > product.stock_quantity) {
           toast.warning('Estoque máximo atingido');
           return prev;
         }
-        toast.success(`+1 ${product.name} adicionado`);
+        toast.success(`+${step} ${product.name} adicionado`);
         return prev.map(item => 
           item.product.id === product.id 
-            ? { ...item, quantity: item.quantity + 1 } 
+            ? { ...item, quantity: newQty } 
             : item
         );
       }
+      const initialQty = product.min_quantity || 1;
       toast.success(`${product.name} adicionado ao carrinho`);
-      return [...prev, { product, quantity: 1 }];
+      return [...prev, { product, quantity: initialQty }];
     });
   };
 
@@ -136,7 +155,11 @@ export default function Catalog() {
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const newQty = Math.max(1, Math.min(item.quantity + delta, item.product.stock_quantity));
+        const step = item.product.purchase_multiple || 1;
+        const minQty = item.product.min_quantity || 1;
+        const actualDelta = delta > 0 ? step : -step;
+        const newQty = Math.max(minQty, Math.min(item.quantity + actualDelta, item.product.stock_quantity));
+        
         if (newQty === item.product.stock_quantity && delta > 0) {
           toast.warning('Estoque máximo atingido');
         }
@@ -146,7 +169,19 @@ export default function Catalog() {
     }));
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  const getProductPrice = (product: Product, quantity: number) => {
+    let price = product.price;
+    if (product.volume_discounts && product.volume_discounts.length > 0) {
+      const sortedDiscounts = [...product.volume_discounts].sort((a, b) => b.min_quantity - a.min_quantity);
+      const applicableDiscount = sortedDiscounts.find(d => quantity >= d.min_quantity);
+      if (applicableDiscount) {
+        price = price * (1 - applicableDiscount.discount_percentage / 100);
+      }
+    }
+    return price;
+  };
+
+  const cartTotal = cart.reduce((sum, item) => sum + (getProductPrice(item.product, item.quantity) * item.quantity), 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Calculate shipping whenever cart changes
@@ -276,7 +311,9 @@ export default function Catalog() {
           total_amount: shippingDetails ? shippingDetails.total : cartTotal,
           delivery_fee: shippingDetails?.deliveryFee || 0,
           is_free_shipping: shippingDetails?.isFreeShipping || false,
-          status: 'aguardando pagamento',
+          status: paymentMethod === 'pix' ? 'aguardando pagamento' : 'pendente',
+          payment_method: paymentMethod,
+          change_for: paymentMethod === 'cash' ? Number(changeFor) || null : null,
           pix_code: pixCode
         })
         .select('*, retailer:companies(name, whatsapp)')
@@ -289,7 +326,7 @@ export default function Catalog() {
         order_id: order.id,
         product_id: item.product.id,
         quantity: item.quantity,
-        price_at_purchase: item.product.price
+        price_at_purchase: getProductPrice(item.product, item.quantity)
       }));
 
       const { error: itemsError } = await supabase
@@ -344,8 +381,12 @@ export default function Catalog() {
 
   const filteredProducts = products
     .filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           p.category?.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = p.name.toLowerCase().includes(searchLower) ||
+                           p.category?.name.toLowerCase().includes(searchLower) ||
+                           p.subcategory?.toLowerCase().includes(searchLower) ||
+                           p.brand?.toLowerCase().includes(searchLower) ||
+                           p.supplier?.name.toLowerCase().includes(searchLower);
       const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
       
       const supplier = p.supplier as any;
@@ -407,51 +448,57 @@ export default function Catalog() {
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-32">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Catálogo de Atacado</h1>
-          <p className="text-zinc-500">Encontre os melhores produtos para sua loja.</p>
+          <h1 className="text-4xl font-black mb-2 tracking-tight">Catálogo <span className="text-orange-600">B2B</span></h1>
+          <p className="text-zinc-500 font-medium">Abasteça sua loja com os melhores fornecedores.</p>
         </div>
-        <button 
-          onClick={() => setIsCartOpen(true)}
-          className="relative bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-3 transition-all shadow-lg shadow-orange-600/20"
-        >
-          <ShoppingCart size={20} />
-          Carrinho
-          {cartCount > 0 && (
-            <span className="absolute -top-2 -right-2 w-6 h-6 bg-white text-orange-600 rounded-full flex items-center justify-center text-xs font-bold border-2 border-orange-600">
-              {cartCount}
-            </span>
-          )}
-        </button>
       </header>
 
       {/* Search & Filters */}
-      <div className="space-y-6">
+      <div className="sticky top-0 z-40 bg-[#050505]/80 backdrop-blur-xl border-b border-white/5 -mx-6 px-6 py-4 mb-8">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1 group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-orange-500 transition-colors" size={20} />
             <input 
               type="text"
-              placeholder="O que você está procurando hoje?"
-              className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl pl-12 pr-24 py-4 focus:outline-none focus:border-orange-500 transition-all text-lg shadow-inner"
+              placeholder="Buscar por produto, marca, categoria ou fornecedor..."
+              className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 py-4 focus:outline-none focus:border-orange-500 transition-all text-lg shadow-inner"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
+              onFocus={() => setShowSearchHistory(true)}
+              onBlur={() => setTimeout(() => setShowSearchHistory(false), 200)}
+              onKeyDown={e => e.key === 'Enter' && addToSearchHistory(searchTerm)}
             />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {searchTerm && (
-                <button 
-                  onClick={() => setSearchTerm('')}
-                  className="p-2 hover:bg-white/5 rounded-xl text-zinc-500 hover:text-white transition-colors"
+            
+            <AnimatePresence>
+              {showSearchHistory && searchHistory.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute top-full left-0 right-0 mt-2 bg-zinc-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50"
                 >
-                  <X size={18} />
-                </button>
+                  <div className="p-2">
+                    <div className="px-3 py-2 text-xs font-bold text-zinc-500 uppercase tracking-wider">Buscas Recentes</div>
+                    {searchHistory.map((term, i) => (
+                      <button 
+                        key={i}
+                        onClick={() => {
+                          setSearchTerm(term);
+                          setShowSearchHistory(false);
+                        }}
+                        className="w-full text-left px-3 py-3 hover:bg-white/5 rounded-xl flex items-center gap-3 transition-all"
+                      >
+                        <Clock size={16} className="text-zinc-600" />
+                        <span>{term}</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
               )}
-              <button className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-zinc-400 transition-colors">
-                <Filter size={18} />
-              </button>
-            </div>
+            </AnimatePresence>
           </div>
           
           <div className="relative min-w-[200px]">
@@ -471,45 +518,65 @@ export default function Catalog() {
         </div>
 
         {/* Categories Horizontal Scroll */}
-        <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="flex gap-3 overflow-x-auto pt-6 no-scrollbar">
           <button 
-            onClick={() => setSelectedCategory(null)}
+            onClick={() => {
+              setSelectedCategory(null);
+              setSearchTerm('');
+            }}
             className={cn(
-              "flex flex-col items-center gap-2 min-w-[80px] p-3 rounded-2xl border transition-all group",
-              !selectedCategory 
+              "flex-shrink-0 px-6 py-3 rounded-2xl font-bold transition-all border flex items-center gap-2",
+              !selectedCategory && !searchTerm
                 ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
-                : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:border-white/20 hover:text-white"
+                : "bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10"
             )}
           >
-            <div className={cn(
-              "w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110",
-              !selectedCategory ? "bg-white/20" : "bg-white/5"
-            )}>
-              <LayoutGrid size={20} />
-            </div>
-            <span className="text-[10px] font-bold uppercase tracking-wider">Todos</span>
+            <LayoutGrid size={18} />
+            Todos
           </button>
-          {categories.map(cat => (
+          {TAXONOMY.map((cat) => (
             <button 
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              key={cat.name}
+              onClick={() => {
+                const dbCat = categories.find(c => c.name === cat.name);
+                if (dbCat) setSelectedCategory(dbCat.id);
+                setSearchTerm('');
+              }}
               className={cn(
-                "flex flex-col items-center gap-2 min-w-[80px] p-3 rounded-2xl border transition-all group",
-                selectedCategory === cat.id
+                "flex-shrink-0 px-6 py-3 rounded-2xl font-bold transition-all border flex items-center gap-2",
+                categories.find(c => c.id === selectedCategory)?.name === cat.name
                   ? "bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20" 
-                  : "bg-[#0A0A0A] border-white/10 text-zinc-400 hover:border-white/20 hover:text-white"
+                  : "bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10"
               )}
             >
-              <div className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110",
-                selectedCategory === cat.id ? "bg-white/20" : "bg-white/5"
-              )}>
-                {categoryIcons[cat.name] || '📦'}
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider truncate w-full text-center">{cat.name}</span>
+              <span className="text-xl">{cat.icon}</span>
+              {cat.name}
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Active Filters Summary */}
+      {(selectedCategory || searchTerm) && (
+        <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-white/5">
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <Filter size={16} />
+            <span>Mostrando resultados para: </span>
+            <span className="text-white font-bold">
+              {searchTerm || categories.find(c => c.id === selectedCategory)?.name}
+            </span>
+          </div>
+          <button 
+            onClick={() => {
+              setSelectedCategory(null);
+              setSearchTerm('');
+            }}
+            className="text-xs font-bold text-orange-500 hover:underline"
+          >
+            Limpar Filtros
+          </button>
+        </div>
+      )}
 
         {/* Quick Filters */}
         <div className="flex items-center gap-4 overflow-x-auto pb-2 no-scrollbar">
@@ -556,7 +623,6 @@ export default function Catalog() {
             </button>
           )}
         </div>
-      </div>
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -622,7 +688,7 @@ export default function Catalog() {
             </div>
 
             <div className="space-y-1 mb-4">
-              <h3 className="font-bold text-lg truncate">{product.name}</h3>
+              <h3 className="font-bold text-lg leading-tight truncate">{product.name}</h3>
               <div className="flex flex-col gap-2 mb-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs text-zinc-500 truncate">Fornecido por: {product.supplier?.name}</p>
@@ -633,23 +699,33 @@ export default function Catalog() {
                     </div>
                   )}
                 </div>
-                {product.supplier && (
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold w-fit",
-                      STATUS_CONFIG[getSupplierStatus(product.supplier)].bg,
-                      STATUS_CONFIG[getSupplierStatus(product.supplier)].text,
-                      STATUS_CONFIG[getSupplierStatus(product.supplier)].border
-                    )}>
-                      <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].icon}</span>
-                      <span>{STATUS_CONFIG[getSupplierStatus(product.supplier)].label}</span>
-                    </div>
-                    {product.supplier.is_featured && (
-                      <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1">
-                        <Star size={10} fill="currentColor" />
-                        Destaque
+                
+                <div className="flex flex-wrap gap-1">
+                  {product.brand && (
+                    <span className="text-[9px] font-bold bg-white/5 text-zinc-400 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">
+                      {product.brand}
+                    </span>
+                  )}
+                  {product.subcategory && (
+                    <span className="text-[9px] font-bold bg-white/5 text-zinc-400 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">
+                      {product.subcategory}
+                    </span>
+                  )}
+                  {product.unit_type && (
+                    <span className="text-[9px] font-bold bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded uppercase tracking-wider border border-orange-500/20">
+                      {product.unit_type === 'unit' ? 'Unitário' : product.unit_type === 'pack' ? 'Pack' : 'Caixa'}
+                    </span>
+                  )}
+                </div>
+
+                {product.volume_discounts && product.volume_discounts.length > 0 && (
+                  <div className="bg-green-500/5 border border-green-500/10 rounded-lg p-2 space-y-1">
+                    {product.volume_discounts.map((d, i) => (
+                      <div key={i} className="text-[9px] font-bold text-green-500 flex items-center gap-1">
+                        <Sparkles size={10} />
+                        {d.min_quantity}+ un: -{d.discount_percentage}% desc.
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -666,7 +742,12 @@ export default function Catalog() {
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] text-zinc-500 font-bold uppercase">Estoque: {product.stock_quantity}</span>
+                <div className="text-right">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase block">Estoque: {product.stock_quantity}</span>
+                  {product.min_quantity > 1 && (
+                    <span className="text-[9px] text-orange-500/70 font-bold uppercase block">Mín: {product.min_quantity} un</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -742,27 +823,66 @@ export default function Catalog() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold truncate">{item.product.name}</h4>
-                        <p className="text-sm text-zinc-500 mb-2">{formatCurrency(item.product.price)} / un</p>
+                        <h4 className="font-bold truncate text-lg">{item.product.name}</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-sm text-zinc-500">
+                            {formatCurrency(getProductPrice(item.product, item.quantity))}
+                            <span className="text-[10px] ml-1">/ un</span>
+                          </p>
+                          {item.product.unit_type && (
+                            <span className="text-[10px] font-bold bg-white/5 text-zinc-500 px-1.5 py-0.5 rounded uppercase border border-white/5">
+                              {item.product.unit_type === 'unit' ? 'Un' : item.product.unit_type === 'pack' ? 'Pack' : 'Cx'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Volume Discount Indicator */}
+                        {item.product.volume_discounts && item.product.volume_discounts.length > 0 && (
+                          <div className="mb-3">
+                            {(() => {
+                              const sortedDiscounts = [...item.product.volume_discounts].sort((a, b) => b.min_quantity - a.min_quantity);
+                              const currentDiscount = sortedDiscounts.find(d => item.quantity >= d.min_quantity);
+                              const nextDiscount = [...sortedDiscounts].reverse().find(d => item.quantity < d.min_quantity);
+                              
+                              return (
+                                <>
+                                  {currentDiscount && (
+                                    <div className="text-[10px] font-bold text-green-500 flex items-center gap-1 mb-1">
+                                      <Sparkles size={10} />
+                                      Desconto de {currentDiscount.discount_percentage}% aplicado!
+                                    </div>
+                                  )}
+                                  {nextDiscount && (
+                                    <div className="text-[10px] font-bold text-orange-500/70 flex items-center gap-1">
+                                      <Info size={10} />
+                                      + {nextDiscount.min_quantity - item.quantity} un para {nextDiscount.discount_percentage}% desc.
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+
                         <div className="flex items-center gap-3">
                           <button 
                             onClick={() => updateQuantity(item.product.id, -1)}
-                            className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10"
+                            className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
                           >
-                            <Minus size={14} />
+                            <Minus size={16} />
                           </button>
-                          <span className="font-bold w-4 text-center">{item.quantity}</span>
+                          <span className="font-bold text-lg w-6 text-center">{item.quantity}</span>
                           <button 
                             onClick={() => updateQuantity(item.product.id, 1)}
-                            className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10"
+                            className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
                           >
-                            <Plus size={14} />
+                            <Plus size={16} />
                           </button>
                           <button 
                             onClick={() => removeFromCart(item.product.id)}
-                            className="ml-auto text-xs text-red-500 font-bold hover:underline"
+                            className="ml-auto p-2 text-zinc-500 hover:text-red-500 transition-colors"
                           >
-                            Remover
+                            <Trash2 size={18} />
                           </button>
                         </div>
                       </div>
@@ -830,6 +950,67 @@ export default function Catalog() {
                       {formatCurrency(shippingDetails ? shippingDetails.total : cartTotal)}
                     </span>
                   </div>
+
+                  {/* Payment Method Selection */}
+                  <div className="space-y-4 pt-4 border-t border-white/5">
+                    <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Forma de Pagamento</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => setPaymentMethod('pix')}
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all",
+                          paymentMethod === 'pix' ? "bg-orange-600/10 border-orange-600 text-orange-500" : "bg-white/5 border-white/5 text-zinc-500 hover:bg-white/10"
+                        )}
+                      >
+                        <QrCode size={20} />
+                        <span className="text-[10px] font-bold uppercase">Pix</span>
+                      </button>
+                      <button
+                        onClick={() => setPaymentMethod('card')}
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all",
+                          paymentMethod === 'card' ? "bg-orange-600/10 border-orange-600 text-orange-500" : "bg-white/5 border-white/5 text-zinc-500 hover:bg-white/10"
+                        )}
+                      >
+                        <Star size={20} />
+                        <span className="text-[10px] font-bold uppercase">Cartão</span>
+                      </button>
+                      <button
+                        onClick={() => setPaymentMethod('cash')}
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all",
+                          paymentMethod === 'cash' ? "bg-orange-600/10 border-orange-600 text-orange-500" : "bg-white/5 border-white/5 text-zinc-500 hover:bg-white/10"
+                        )}
+                      >
+                        <DollarSign size={20} />
+                        <span className="text-[10px] font-bold uppercase">Dinheiro</span>
+                      </button>
+                    </div>
+
+                    {paymentMethod === 'cash' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-2"
+                      >
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Troco para quanto?</label>
+                        <input
+                          type="number"
+                          value={changeFor}
+                          onChange={(e) => setChangeFor(e.target.value)}
+                          placeholder="Ex: 100"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-all text-sm"
+                        />
+                        <p className="text-[10px] text-zinc-500 italic ml-1">Deixe em branco se não precisar de troco.</p>
+                      </motion.div>
+                    )}
+
+                    {paymentMethod === 'card' && (
+                      <p className="text-[10px] text-zinc-500 italic text-center">
+                        O pagamento será realizado na maquininha no momento da entrega.
+                      </p>
+                    )}
+                  </div>
                   
                   <button 
                     disabled={isCheckingOut || calculatingShipping}
@@ -844,7 +1025,7 @@ export default function Catalog() {
                     ) : (
                       <>
                         <CheckCircle2 size={20} />
-                        Finalizar Pedido (Pix)
+                        Finalizar Pedido ({paymentMethod === 'pix' ? 'Pix' : paymentMethod === 'card' ? 'Cartão' : 'Dinheiro'})
                       </>
                     )}
                   </button>
@@ -877,10 +1058,14 @@ export default function Catalog() {
               <div className="p-6 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-orange-600/10 to-transparent">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center text-orange-500">
-                    <QrCode size={24} />
+                    {currentOrder.payment_method === 'pix' ? <QrCode size={24} /> : 
+                     currentOrder.payment_method === 'card' ? <Star size={24} /> : <DollarSign size={24} />}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold">Pagamento Pix</h3>
+                    <h3 className="text-lg font-bold">
+                      {currentOrder.payment_method === 'pix' ? 'Pagamento Pix' : 
+                       currentOrder.payment_method === 'card' ? 'Pagamento no Cartão' : 'Pagamento em Dinheiro'}
+                    </h3>
                     <p className="text-xs text-zinc-500">Pedido #{currentOrder.id.substring(0, 8)}</p>
                   </div>
                 </div>
@@ -895,26 +1080,78 @@ export default function Catalog() {
               <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
                 {/* Status Badge */}
                 <div className="flex justify-center">
-                  <div className="px-4 py-2 rounded-full bg-orange-600/10 border border-orange-600/20 text-orange-500 text-sm font-bold flex items-center gap-2 animate-pulse">
-                    <div className="w-2 h-2 rounded-full bg-orange-500" />
-                    Aguardando Pagamento
+                  <div className={cn(
+                    "px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2",
+                    currentOrder.payment_method === 'pix' 
+                      ? "bg-orange-600/10 border border-orange-600/20 text-orange-500 animate-pulse"
+                      : "bg-emerald-600/10 border border-emerald-600/20 text-emerald-500"
+                  )}>
+                    <div className={cn(
+                      "w-2 h-2 rounded-full",
+                      currentOrder.payment_method === 'pix' ? "bg-orange-500" : "bg-emerald-500"
+                    )} />
+                    {currentOrder.payment_method === 'pix' ? 'Aguardando Pagamento' : 'Pedido Confirmado'}
                   </div>
                 </div>
 
-                {/* QR Code */}
-                <div className="flex flex-col items-center gap-4">
-                  <div className="p-4 bg-white rounded-2xl shadow-inner">
-                    <QRCodeSVG 
-                      value={currentOrder.pix_code || ''} 
-                      size={200}
-                      level="H"
-                      includeMargin={false}
-                    />
+                {currentOrder.payment_method === 'pix' ? (
+                  <>
+                    {/* QR Code */}
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="p-4 bg-white rounded-2xl shadow-inner">
+                        <QRCodeSVG 
+                          value={currentOrder.pix_code || ''} 
+                          size={200}
+                          level="H"
+                          includeMargin={false}
+                        />
+                      </div>
+                      <p className="text-xs text-zinc-500 text-center max-w-[200px]">
+                        Escaneie o QR Code acima com o aplicativo do seu banco
+                      </p>
+                    </div>
+
+                    {/* Pix Code Copy */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">
+                        Código Copia e Cola
+                      </label>
+                      <div className="relative group">
+                        <div className="w-full p-4 pr-12 bg-white/5 border border-white/10 rounded-2xl text-xs font-mono break-all text-zinc-300">
+                          {currentOrder.pix_code}
+                        </div>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(currentOrder.pix_code || '');
+                            toast.success('Código Pix copiado!');
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center hover:bg-orange-700 transition-all shadow-lg shadow-orange-600/20 active:scale-95"
+                        >
+                          <Copy size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 space-y-4">
+                    <div className="w-20 h-20 bg-emerald-600/10 rounded-full flex items-center justify-center mx-auto text-emerald-500">
+                      <CheckCircle2 size={48} />
+                    </div>
+                    <div>
+                      <h4 className="text-xl font-bold">Tudo certo!</h4>
+                      <p className="text-zinc-500 text-sm">
+                        Seu pedido foi enviado para o fornecedor. 
+                        O pagamento será realizado no momento da entrega.
+                      </p>
+                    </div>
+                    {currentOrder.change_for && (
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                        <p className="text-xs text-zinc-500 uppercase font-bold tracking-widest mb-1">Troco para</p>
+                        <p className="text-xl font-bold text-white">{formatCurrency(currentOrder.change_for)}</p>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-xs text-zinc-500 text-center max-w-[200px]">
-                    Escaneie o QR Code acima com o aplicativo do seu banco
-                  </p>
-                </div>
+                )}
 
                 {/* Amount */}
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
@@ -922,27 +1159,6 @@ export default function Catalog() {
                   <span className="text-2xl font-bold text-orange-500">
                     {formatCurrency(currentOrder.total_amount)}
                   </span>
-                </div>
-
-                {/* Pix Code Copy */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                    Código Copia e Cola
-                  </label>
-                  <div className="relative group">
-                    <div className="w-full p-4 pr-12 bg-white/5 border border-white/10 rounded-2xl text-xs font-mono break-all text-zinc-300">
-                      {currentOrder.pix_code}
-                    </div>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(currentOrder.pix_code || '');
-                        toast.success('Código Pix copiado!');
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center hover:bg-orange-700 transition-all shadow-lg shadow-orange-600/20 active:scale-95"
-                    >
-                      <Copy size={18} />
-                    </button>
-                  </div>
                 </div>
 
                 {/* Supplier Info */}
@@ -956,10 +1172,12 @@ export default function Catalog() {
                       <p className="text-zinc-500 mb-1">Empresa</p>
                       <p className="font-medium">{currentOrder.supplier?.name}</p>
                     </div>
-                    <div>
-                      <p className="text-zinc-500 mb-1">Chave Pix</p>
-                      <p className="font-medium truncate">{currentOrder.supplier?.pix_key}</p>
-                    </div>
+                    {currentOrder.payment_method === 'pix' && (
+                      <div>
+                        <p className="text-zinc-500 mb-1">Chave Pix</p>
+                        <p className="font-medium truncate">{currentOrder.supplier?.pix_key}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -985,6 +1203,34 @@ export default function Catalog() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      {/* Fixed Bottom Cart Button */}
+      <AnimatePresence>
+        {cart.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 100 }}
+            className="fixed bottom-4 left-4 right-4 z-50 pb-[env(safe-area-inset-bottom)]"
+          >
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white px-6 py-4 rounded-2xl font-bold flex items-center justify-between transition-all shadow-[0_8px_30px_rgb(234,88,12,0.3)] active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <ShoppingCart size={24} />
+                <span className="text-lg">Carrinho ({cartCount})</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="h-6 w-px bg-white/20" />
+                <span className="text-lg font-black tracking-tight">
+                  {formatCurrency(shippingDetails ? shippingDetails.total : cartTotal)}
+                </span>
+                <ChevronRight size={20} />
+              </div>
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

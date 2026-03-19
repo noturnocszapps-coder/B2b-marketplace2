@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, type Profile } from '../lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
@@ -17,12 +17,17 @@ import {
   Filter,
   Building2,
   Trash2,
-  Star
+  Star,
+  Edit2,
+  Phone,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getCompanyPlan, PLAN_CONFIG, type PlanType } from '../lib/supplier';
 import { AnimatePresence, motion } from 'motion/react';
+import { formatCPF, formatCNPJ, formatPhone } from '../lib/utils';
 
 export default function UserManagement() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -31,6 +36,21 @@ export default function UserManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [selectedUserForPlan, setSelectedUserForPlan] = useState<any | null>(null);
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    full_name: '',
+    email: '',
+    status: '' as any,
+    role: '' as any,
+    whatsapp: '',
+    company_name: '',
+    cnpj: '',
+    cpf: '',
+    address: '',
+    vehicle_type: '',
+    plate: '',
+    city: ''
+  });
   const [planForm, setPlanForm] = useState({
     type: 'free' as PlanType,
     expires_at: ''
@@ -100,6 +120,66 @@ export default function UserManagement() {
       fetchProfiles();
     } catch (error: any) {
       toast.error('Erro ao atualizar status: ' + error.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserForEdit) return;
+    setUpdatingId(selectedUserForEdit.id);
+
+    try {
+      // 1. Update Profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: editForm.full_name,
+          role: editForm.role,
+          status: editForm.status
+        })
+        .eq('id', selectedUserForEdit.id);
+
+      if (profileError) throw profileError;
+
+      // 2. Update Role Specific Data
+      if (editForm.role === 'supplier' || editForm.role === 'retailer') {
+        const company = selectedUserForEdit.companies?.[0];
+        if (company) {
+          const { error: companyError } = await supabase
+            .from('companies')
+            .update({
+              name: editForm.company_name,
+              cnpj: editForm.cnpj.replace(/\D/g, ''),
+              whatsapp: editForm.whatsapp.replace(/\D/g, ''),
+              address: editForm.address
+            })
+            .eq('id', company.id);
+          if (companyError) throw companyError;
+        }
+      } else if (editForm.role === 'driver') {
+        const driver = selectedUserForEdit.delivery_drivers?.[0];
+        if (driver) {
+          const { error: driverError } = await supabase
+            .from('delivery_drivers')
+            .update({
+              cpf: editForm.cpf.replace(/\D/g, ''),
+              whatsapp: editForm.whatsapp.replace(/\D/g, ''),
+              vehicle_type: editForm.vehicle_type,
+              plate: editForm.plate,
+              city: editForm.city
+            })
+            .eq('id', driver.id);
+          if (driverError) throw driverError;
+        }
+      }
+
+      toast.success('Usuário atualizado com sucesso!');
+      setSelectedUserForEdit(null);
+      fetchProfiles();
+    } catch (error: any) {
+      toast.error('Erro ao atualizar usuário: ' + error.message);
     } finally {
       setUpdatingId(null);
     }
@@ -282,10 +362,28 @@ export default function UserManagement() {
                   )}
 
                   <button 
-                    onClick={() => toast.info('Edição de perfil em desenvolvimento')}
+                    onClick={() => {
+                      setSelectedUserForEdit(user);
+                      const company = (user as any).companies?.[0];
+                      const driver = (user as any).delivery_drivers?.[0];
+                      setEditForm({
+                        full_name: user.full_name || '',
+                        email: user.email || '',
+                        status: user.status,
+                        role: user.role,
+                        whatsapp: company?.whatsapp || driver?.whatsapp || '',
+                        company_name: company?.name || '',
+                        cnpj: company?.cnpj || '',
+                        cpf: driver?.cpf || '',
+                        address: company?.address || '',
+                        vehicle_type: driver?.vehicle_type || '',
+                        plate: driver?.plate || '',
+                        city: driver?.city || ''
+                      });
+                    }}
                     className="p-2 text-zinc-600 hover:text-white transition-colors"
                   >
-                    <MoreVertical size={20} />
+                    <Edit2 size={20} />
                   </button>
                 </div>
               </div>
@@ -293,6 +391,187 @@ export default function UserManagement() {
           ))
         )}
       </div>
+
+      {/* Edit User Modal */}
+      <AnimatePresence>
+        {selectedUserForEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedUserForEdit(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-[#0A0A0A] border border-white/10 rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <Edit2 className="text-orange-500" />
+                  Editar Usuário
+                </h3>
+                <button onClick={() => setSelectedUserForEdit(null)} className="p-2 hover:bg-white/5 rounded-full">
+                  <XCircle size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditUser} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Nome Completo</label>
+                    <input
+                      required
+                      value={editForm.full_name}
+                      onChange={e => setEditForm({...editForm, full_name: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">E-mail</label>
+                    <input
+                      readOnly
+                      value={editForm.email}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-4 opacity-50 cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Status</label>
+                    <select
+                      value={editForm.status}
+                      onChange={e => setEditForm({...editForm, status: e.target.value as any})}
+                      className="w-full bg-[#151515] border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                    >
+                      <option value="pending">Pendente</option>
+                      <option value="active">Ativo</option>
+                      <option value="blocked">Bloqueado</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Role</label>
+                    <select
+                      value={editForm.role}
+                      onChange={e => setEditForm({...editForm, role: e.target.value as any})}
+                      className="w-full bg-[#151515] border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                    >
+                      <option value="retailer">Lojista</option>
+                      <option value="supplier">Fornecedor</option>
+                      <option value="driver">Entregador</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+
+                  {(editForm.role === 'supplier' || editForm.role === 'retailer') && (
+                    <>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Nome da Empresa</label>
+                        <input
+                          value={editForm.company_name}
+                          onChange={e => setEditForm({...editForm, company_name: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">CNPJ</label>
+                        <input
+                          value={editForm.cnpj}
+                          onChange={e => setEditForm({...editForm, cnpj: formatCNPJ(e.target.value)})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">WhatsApp</label>
+                        <input
+                          value={editForm.whatsapp}
+                          onChange={e => setEditForm({...editForm, whatsapp: formatPhone(e.target.value)})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Endereço</label>
+                        <input
+                          value={editForm.address}
+                          onChange={e => setEditForm({...editForm, address: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {editForm.role === 'driver' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">CPF</label>
+                        <input
+                          value={editForm.cpf}
+                          onChange={e => setEditForm({...editForm, cpf: formatCPF(e.target.value)})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">WhatsApp</label>
+                        <input
+                          value={editForm.whatsapp}
+                          onChange={e => setEditForm({...editForm, whatsapp: formatPhone(e.target.value)})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Tipo de Veículo</label>
+                        <input
+                          value={editForm.vehicle_type}
+                          onChange={e => setEditForm({...editForm, vehicle_type: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Placa</label>
+                        <input
+                          value={editForm.plate}
+                          onChange={e => setEditForm({...editForm, plate: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Cidade</label>
+                        <input
+                          value={editForm.city}
+                          onChange={e => setEditForm({...editForm, city: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 focus:outline-none focus:border-orange-500 transition-all"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUserForEdit(null)}
+                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={updatingId === selectedUserForEdit.id}
+                    type="submit"
+                    className="flex-[2] py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {updatingId === selectedUserForEdit.id ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      'Salvar Alterações'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Plan Management Modal */}
       <AnimatePresence>

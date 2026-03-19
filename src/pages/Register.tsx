@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Package, ArrowRight, CheckCircle2, User, Building2, Truck as TruckIcon, Mail, Lock, Phone, FileText, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
+import { cn, formatCPF, formatCNPJ, formatCEP, formatPhone, validateCPF, validateCNPJ } from '../lib/utils';
 import { toast } from 'sonner';
 
 export default function Register() {
@@ -12,6 +12,7 @@ export default function Register() {
   const [role, setRole] = useState<'supplier' | 'retailer' | 'driver'>('retailer');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
 
   useEffect(() => {
     const roleParam = searchParams.get('role');
@@ -26,17 +27,67 @@ export default function Register() {
     fullName: '',
     companyName: '',
     cnpj: '',
+    cep: '',
     address: '',
+    street: '',
+    neighborhood: '',
+    number: '',
+    complement: '',
     whatsapp: '',
     responsibleName: '',
     cpf: '',
     vehicleType: 'Moto',
     plate: '',
-    city: ''
+    city: '',
+    state: ''
   });
+
+  const handleCEPBlur = async () => {
+    const cep = formData.cep.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+
+    setCepLoading(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await response.json();
+
+      if (data.erro) {
+        toast.error('CEP não encontrado');
+        return;
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        street: data.logradouro,
+        neighborhood: data.bairro,
+        city: data.localidade,
+        state: data.uf,
+        address: `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}`
+      }));
+      toast.success('Endereço preenchido automaticamente');
+    } catch (error) {
+      toast.error('Erro ao buscar CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validations
+    if (role === 'driver') {
+      if (!validateCPF(formData.cpf)) {
+        toast.error('CPF inválido');
+        return;
+      }
+    } else {
+      if (!validateCNPJ(formData.cnpj)) {
+        toast.error('CNPJ inválido');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -60,14 +111,16 @@ export default function Register() {
 
       if (profileError) throw profileError;
 
+      const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ` - ${formData.complement}` : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state} (CEP: ${formData.cep})`;
+
       // 3. Create role specific data
       if (role === 'supplier' || role === 'retailer') {
         const { error: companyError } = await supabase.from('companies').insert({
           profile_id: authData.user.id,
           name: formData.companyName,
-          cnpj: formData.cnpj,
-          address: formData.address,
-          whatsapp: formData.whatsapp,
+          cnpj: formData.cnpj.replace(/\D/g, ''),
+          address: fullAddress,
+          whatsapp: formData.whatsapp.replace(/\D/g, ''),
           responsible_name: formData.responsibleName,
           type: role
         });
@@ -75,8 +128,8 @@ export default function Register() {
       } else if (role === 'driver') {
         const { error: driverError } = await supabase.from('delivery_drivers').insert({
           profile_id: authData.user.id,
-          cpf: formData.cpf,
-          whatsapp: formData.whatsapp,
+          cpf: formData.cpf.replace(/\D/g, ''),
+          whatsapp: formData.whatsapp.replace(/\D/g, ''),
           vehicle_type: formData.vehicleType,
           plate: formData.plate,
           city: formData.city
@@ -228,7 +281,7 @@ export default function Register() {
                         placeholder="00.000.000/0000-00"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
                         value={formData.cnpj}
-                        onChange={e => setFormData({...formData, cnpj: e.target.value})}
+                        onChange={e => setFormData({...formData, cnpj: formatCNPJ(e.target.value)})}
                       />
                     </div>
                   </div>
@@ -241,21 +294,84 @@ export default function Register() {
                         placeholder="(00) 00000-0000"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
                         value={formData.whatsapp}
-                        onChange={e => setFormData({...formData, whatsapp: e.target.value})}
+                        onChange={e => setFormData({...formData, whatsapp: formatPhone(e.target.value)})}
                       />
                     </div>
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Endereço Completo</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={18} />
-                      <input
-                        required
-                        placeholder="Rua, número, bairro, cidade - UF"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
-                        value={formData.address}
-                        onChange={e => setFormData({...formData, address: e.target.value})}
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">CEP</label>
+                        <div className="relative">
+                          <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={18} />
+                          <input
+                            required
+                            placeholder="00000-000"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                            value={formData.cep}
+                            onChange={e => setFormData({...formData, cep: formatCEP(e.target.value)})}
+                            onBlur={handleCEPBlur}
+                          />
+                          {cepLoading && (
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                              <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Rua / Logradouro</label>
+                        <input
+                          required
+                          placeholder="Ex: Av. Paulista"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                          value={formData.street}
+                          onChange={e => setFormData({...formData, street: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Número</label>
+                        <input
+                          required
+                          placeholder="123"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                          value={formData.number}
+                          onChange={e => setFormData({...formData, number: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Complemento</label>
+                        <input
+                          placeholder="Apto 101"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                          value={formData.complement}
+                          onChange={e => setFormData({...formData, complement: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Bairro</label>
+                        <input
+                          required
+                          placeholder="Centro"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                          value={formData.neighborhood}
+                          onChange={e => setFormData({...formData, neighborhood: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-zinc-500 uppercase tracking-widest ml-1">Cidade/UF</label>
+                        <input
+                          required
+                          placeholder="São Paulo - SP"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
+                          value={`${formData.city}${formData.state ? ` - ${formData.state}` : ''}`}
+                          readOnly
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-2 md:col-span-2">
@@ -296,7 +412,7 @@ export default function Register() {
                         placeholder="000.000.000-00"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
                         value={formData.cpf}
-                        onChange={e => setFormData({...formData, cpf: e.target.value})}
+                        onChange={e => setFormData({...formData, cpf: formatCPF(e.target.value)})}
                       />
                     </div>
                   </div>
@@ -309,7 +425,7 @@ export default function Register() {
                         placeholder="(00) 00000-0000"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-4 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all placeholder:text-zinc-700"
                         value={formData.whatsapp}
-                        onChange={e => setFormData({...formData, whatsapp: e.target.value})}
+                        onChange={e => setFormData({...formData, whatsapp: formatPhone(e.target.value)})}
                       />
                     </div>
                   </div>

@@ -13,6 +13,8 @@ import {
   MessageCircle,
   ExternalLink,
   Phone,
+  QrCode,
+  Star,
   X,
   Info,
   DollarSign
@@ -413,6 +415,49 @@ export default function Deliveries() {
                         {selectedDelivery.order?.retailer?.whatsapp}
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Payment Info */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <DollarSign size={16} />
+                    Pagamento
+                  </h3>
+                  <div className="p-6 rounded-3xl bg-white/5 border border-white/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-zinc-400 border border-white/5">
+                          {selectedDelivery.order?.payment_method === 'pix' ? <QrCode size={20} /> : 
+                           selectedDelivery.order?.payment_method === 'card' ? <Star size={20} /> : <DollarSign size={20} />}
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm capitalize">
+                            {selectedDelivery.order?.payment_method === 'pix' ? 'Pix' : 
+                             selectedDelivery.order?.payment_method === 'card' ? 'Cartão' : 
+                             selectedDelivery.order?.payment_method === 'cash' ? 'Dinheiro' : 'Não informado'}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest">Forma de Recebimento</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-black text-orange-500">
+                          {formatCurrency(selectedDelivery.order?.total_amount || 0)}
+                        </p>
+                        {selectedDelivery.order?.payment_method === 'cash' && selectedDelivery.order?.change_for && (
+                          <p className="text-xs text-emerald-500 font-bold">
+                            Troco para {formatCurrency(selectedDelivery.order.change_for)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {selectedDelivery.order?.payment_method === 'pix' && (
+                      <div className="p-4 rounded-2xl bg-orange-600/5 border border-orange-600/10">
+                        <p className="text-[10px] text-orange-500 font-bold uppercase tracking-widest leading-relaxed">
+                          Atenção: O pagamento via Pix já deve ter sido confirmado pelo sistema ou pelo lojista antes de entregar os produtos.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

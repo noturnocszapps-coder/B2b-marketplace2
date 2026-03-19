@@ -81,6 +81,16 @@ export interface Product {
   is_active: boolean;
   category?: { name: string; parent_category: string };
   supplier?: Company;
+  subcategory?: string;
+  subtype?: string;
+  brand?: string;
+  unit_type: 'unit' | 'pack' | 'box';
+  min_quantity: number;
+  purchase_multiple: number;
+  volume_discounts?: {
+    min_quantity: number;
+    discount_percentage: number;
+  }[];
 }
 
 export interface Order {
@@ -88,6 +98,8 @@ export interface Order {
   retailer_id: string;
   total_amount: number;
   status: string;
+  payment_method: 'pix' | 'card' | 'cash';
+  change_for?: number;
   pix_code: string;
   created_at: string;
   delivery_fee?: number;

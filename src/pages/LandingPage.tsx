@@ -62,7 +62,7 @@ export default function LandingPage() {
             <div className="hidden md:flex items-center gap-8">
               <a href="#como-funciona" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Como Funciona</a>
               <a href="#para-quem" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Para Quem</a>
-              <a href="#diferenciais" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Diferenciais</a>
+              <Link to="/about" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Quem Somos</Link>
               <div className="h-4 w-px bg-white/10" />
               <Link to="/login" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Entrar</Link>
               <Link 
@@ -92,7 +92,7 @@ export default function LandingPage() {
           >
             <a href="#como-funciona" onClick={() => setIsMenuOpen(false)} className="block text-lg font-medium text-zinc-400">Como Funciona</a>
             <a href="#para-quem" onClick={() => setIsMenuOpen(false)} className="block text-lg font-medium text-zinc-400">Para Quem</a>
-            <a href="#diferenciais" onClick={() => setIsMenuOpen(false)} className="block text-lg font-medium text-zinc-400">Diferenciais</a>
+            <Link to="/about" onClick={() => setIsMenuOpen(false)} className="block text-lg font-medium text-zinc-400">Quem Somos</Link>
             <div className="pt-4 flex flex-col gap-4">
               <Link to="/login" className="text-center py-3 text-zinc-400 font-medium">Entrar</Link>
               <Link to="/register" className="text-center py-3 bg-orange-600 text-white rounded-xl font-bold">Começar Agora</Link>
@@ -157,6 +157,13 @@ export default function LandingPage() {
               >
                 <Store size={20} />
                 Sou fornecedor
+              </Link>
+              <Link 
+                to="/register?role=driver" 
+                className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2"
+              >
+                <Truck size={20} />
+                Sou entregador
               </Link>
             </motion.div>
 
@@ -267,6 +274,35 @@ export default function LandingPage() {
               </div>
               <Package className="absolute -bottom-10 -right-10 text-white/5 w-64 h-64 -rotate-12 group-hover:rotate-0 transition-transform duration-500" />
             </motion.div>
+
+            <motion.div 
+              whileHover={{ scale: 1.02 }}
+              className="p-10 rounded-[2.5rem] bg-gradient-to-br from-zinc-800 to-zinc-950 border border-white/10 group overflow-hidden relative lg:col-span-2"
+            >
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+                <div className="max-w-xl">
+                  <div className="w-16 h-16 bg-orange-600/10 rounded-2xl flex items-center justify-center mb-8">
+                    <Truck className="text-orange-500" size={32} />
+                  </div>
+                  <h3 className="text-4xl font-black mb-4">Entregadores</h3>
+                  <p className="text-zinc-400 text-lg mb-8">
+                    Faça parte da nossa rede logística. Ganhe dinheiro realizando entregas para os melhores fornecedores da sua região.
+                  </p>
+                  <Link to="/register?role=driver" className="inline-flex items-center gap-2 bg-white text-black px-8 py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all shadow-xl shadow-white/5">
+                    Quero ser entregador
+                    <ArrowRight size={20} />
+                  </Link>
+                </div>
+                <div className="hidden md:block">
+                  <div className="w-64 h-64 bg-orange-600/20 rounded-full blur-3xl absolute -right-20 -top-20" />
+                  <div className="relative">
+                    <div className="w-48 h-48 bg-zinc-800 rounded-3xl border border-white/10 rotate-12 flex items-center justify-center">
+                      <Smartphone className="text-orange-500" size={64} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
         </div>
       </section>
@@ -349,13 +385,24 @@ export default function LandingPage() {
             </div>
             
             <div className="flex gap-8 text-sm text-zinc-500">
-              <a href="#" className="hover:text-white transition-colors">Termos de Uso</a>
-              <a href="#" className="hover:text-white transition-colors">Privacidade</a>
-              <a href="#" className="hover:text-white transition-colors">Contato</a>
+              <Link to="/about" className="hover:text-white transition-colors">Quem Somos</Link>
+              <Link to="/terms" className="hover:text-white transition-colors">Termos de Uso</Link>
+              <Link to="/privacy" className="hover:text-white transition-colors">Privacidade</Link>
+              <Link to="/contact" className="hover:text-white transition-colors">Contato</Link>
             </div>
 
-            <div className="text-zinc-600 text-sm">
-              © 2026 {PLATFORM_NAME}. Todos os direitos reservados.
+            <div className="flex flex-col items-center md:items-end gap-2">
+              <div className="text-zinc-600 text-sm">
+                © 2026 {PLATFORM_NAME}. Todos os direitos reservados.
+              </div>
+              <a 
+                href="https://www.ntaplicacoes.com.br" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-[10px] text-zinc-700 hover:text-orange-500 transition-colors uppercase tracking-widest font-bold"
+              >
+                Desenvolvido por NT Aplicações
+              </a>
             </div>
           </div>
         </div>

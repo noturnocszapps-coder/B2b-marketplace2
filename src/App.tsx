@@ -15,6 +15,10 @@ import Orders from './pages/Orders';
 import Deliveries from './pages/Deliveries';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
+import About from './pages/About';
+import Contact from './pages/Contact';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 import { PendingApproval, Blocked, Unauthorized } from './pages/StatusPages';
 
 export default function App() {
@@ -27,6 +31,10 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/pending-approval" element={<PendingApproval />} />
           <Route path="/blocked" element={<Blocked />} />
           <Route path="/unauthorized" element={<Unauthorized />} />

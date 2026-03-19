@@ -135,6 +135,13 @@ export default function Settings() {
     delivery: true
   });
 
+  // Sync prefs when profile is loaded
+  React.useEffect(() => {
+    if (profile?.notification_preferences) {
+      setPrefs(profile.notification_preferences);
+    }
+  }, [profile]);
+
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;

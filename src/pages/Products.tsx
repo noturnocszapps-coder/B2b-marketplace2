@@ -15,6 +15,7 @@ import {
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { TAXONOMY } from '../constants/taxonomy';
 
 export default function Products() {
   const { profile } = useAuth();
@@ -34,7 +35,14 @@ export default function Products() {
     category_id: '',
     supplier_id: '',
     image_url: '',
-    is_active: true
+    is_active: true,
+    subcategory: '',
+    subtype: '',
+    brand: '',
+    unit_type: 'unit' as 'unit' | 'pack' | 'box',
+    min_quantity: 1,
+    purchase_multiple: 1,
+    volume_discounts: [] as { min_quantity: number; discount_percentage: number }[]
   });
 
   useEffect(() => {
@@ -57,7 +65,14 @@ export default function Products() {
         category_id: editingProduct.category_id,
         supplier_id: editingProduct.supplier_id,
         image_url: editingProduct.image_url || '',
-        is_active: editingProduct.is_active
+        is_active: editingProduct.is_active,
+        subcategory: editingProduct.subcategory || '',
+        subtype: editingProduct.subtype || '',
+        brand: editingProduct.brand || '',
+        unit_type: editingProduct.unit_type || 'unit',
+        min_quantity: editingProduct.min_quantity || 1,
+        purchase_multiple: editingProduct.purchase_multiple || 1,
+        volume_discounts: editingProduct.volume_discounts || []
       });
     } else {
       setFormData({
@@ -68,7 +83,14 @@ export default function Products() {
         category_id: '',
         supplier_id: '',
         image_url: '',
-        is_active: true
+        is_active: true,
+        subcategory: '',
+        subtype: '',
+        brand: '',
+        unit_type: 'unit',
+        min_quantity: 1,
+        purchase_multiple: 1,
+        volume_discounts: []
       });
     }
   }, [editingProduct]);
@@ -375,18 +397,162 @@ export default function Products() {
                     </div>
                   )}
                   <div className="space-y-2 md:col-span-2">
-                    <label className="text-sm font-medium text-zinc-400">Categoria</label>
+                    <label className="text-sm font-medium text-zinc-400">Categoria Principal</label>
                     <select 
                       required
                       className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
                       value={formData.category_id}
-                      onChange={e => setFormData({...formData, category_id: e.target.value})}
+                      onChange={e => {
+                        const cat = categories.find(c => c.id === e.target.value);
+                        setFormData({
+                          ...formData, 
+                          category_id: e.target.value,
+                          subcategory: '',
+                          subtype: ''
+                        });
+                      }}
                     >
                       <option value="">Selecione uma categoria</option>
                       {categories.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
+                  </div>
+
+                  {formData.category_id && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-zinc-400">Subcategoria</label>
+                        <select 
+                          className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                          value={formData.subcategory}
+                          onChange={e => setFormData({...formData, subcategory: e.target.value, subtype: ''})}
+                        >
+                          <option value="">Selecione uma subcategoria</option>
+                          {TAXONOMY.find(t => t.name === categories.find(c => c.id === formData.category_id)?.name)?.subcategories.map(sub => (
+                            <option key={sub.name} value={sub.name}>{sub.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-zinc-400">Subtipo / Marca</label>
+                        <select 
+                          className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                          value={formData.subtype}
+                          onChange={e => setFormData({...formData, subtype: e.target.value})}
+                        >
+                          <option value="">Selecione um subtipo</option>
+                          {TAXONOMY.find(t => t.name === categories.find(c => c.id === formData.category_id)?.name)
+                            ?.subcategories.find(s => s.name === formData.subcategory)
+                            ?.subtypes?.map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-400">Marca (Opcional)</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500" 
+                      value={formData.brand}
+                      onChange={e => setFormData({...formData, brand: e.target.value})}
+                      placeholder="Ex: Zomo, Coca-Cola"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-400">Tipo de Unidade</label>
+                    <select 
+                      className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                      value={formData.unit_type}
+                      onChange={e => setFormData({...formData, unit_type: e.target.value as any})}
+                    >
+                      <option value="unit">Unitário</option>
+                      <option value="pack">Pack</option>
+                      <option value="box">Caixa Fechada</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-400">Quantidade Mínima</label>
+                    <input 
+                      type="number"
+                      min="1"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500" 
+                      value={formData.min_quantity}
+                      onChange={e => setFormData({...formData, min_quantity: parseInt(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-400">Múltiplo de Compra</label>
+                    <input 
+                      type="number"
+                      min="1"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500" 
+                      value={formData.purchase_multiple}
+                      onChange={e => setFormData({...formData, purchase_multiple: parseInt(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="space-y-4 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-zinc-400">Descontos por Volume</label>
+                      <button 
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData, 
+                          volume_discounts: [...formData.volume_discounts, { min_quantity: 0, discount_percentage: 0 }]
+                        })}
+                        className="text-xs text-orange-500 hover:text-orange-400 font-bold flex items-center gap-1"
+                      >
+                        <Plus size={14} /> Adicionar Faixa
+                      </button>
+                    </div>
+                    
+                    {formData.volume_discounts.map((discount, index) => (
+                      <div key={index} className="flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5">
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[10px] uppercase text-zinc-500">Qtd Mínima</label>
+                          <input 
+                            type="number"
+                            className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm"
+                            value={discount.min_quantity}
+                            onChange={e => {
+                              const newDiscounts = [...formData.volume_discounts];
+                              newDiscounts[index].min_quantity = parseInt(e.target.value);
+                              setFormData({...formData, volume_discounts: newDiscounts});
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[10px] uppercase text-zinc-500">Desconto (%)</label>
+                          <input 
+                            type="number"
+                            className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm"
+                            value={discount.discount_percentage}
+                            onChange={e => {
+                              const newDiscounts = [...formData.volume_discounts];
+                              newDiscounts[index].discount_percentage = parseInt(e.target.value);
+                              setFormData({...formData, volume_discounts: newDiscounts});
+                            }}
+                          />
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const newDiscounts = formData.volume_discounts.filter((_, i) => i !== index);
+                            setFormData({...formData, volume_discounts: newDiscounts});
+                          }}
+                          className="p-2 text-zinc-500 hover:text-red-500"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-sm font-medium text-zinc-400">Descrição</label>
